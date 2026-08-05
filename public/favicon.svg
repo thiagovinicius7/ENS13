@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <circle cx="64" cy="64" r="62" fill="#0E3269" stroke="#C8952A" stroke-width="4"/>
+  <!-- Halo with Gold Rays -->
+  <circle cx="64" cy="48" r="28" fill="#FEF3C7" opacity="0.3"/>
+  <circle cx="64" cy="48" r="30" stroke="#F59E0B" stroke-width="2" stroke-dasharray="4 3" opacity="0.9"/>
+  
+  <!-- Halo Stars -->
+  <circle cx="64" cy="22" r="2.5" fill="#FBBF24"/>
+  <circle cx="44" cy="28" r="2" fill="#FBBF24"/>
+  <circle cx="84" cy="28" r="2" fill="#FBBF24"/>
+  <circle cx="38" cy="46" r="2" fill="#FBBF24"/>
+  <circle cx="90" cy="46" r="2" fill="#FBBF24"/>
+  
+  <!-- Outer Sacred Blue Mantle -->
+  <path d="M64 28 C48 28, 38 42, 36 62 C34 82, 32 110, 30 124 L98 124 C96 110, 94 82, 92 62 C90 42, 80 28, 64 28 Z" fill="#1D4ED8"/>
+  <path d="M40 58 C38 75, 36 102, 34 124 M88 58 C90 75, 92 102, 94 124" stroke="#F59E0B" stroke-width="2"/>
+  
+  <!-- Inner White Robe -->
+  <path d="M56 62 C56 62, 64 68, 72 62 L78 124 L48 124 Z" fill="#FAFAFA"/>
+  
+  <!-- Face & Hands -->
+  <ellipse cx="64" cy="48" rx="10" ry="13" fill="#FDE68A"/>
+  <path d="M61 80 C61 74, 64 68, 64 68 C64 68, 67 74, 67 80 C66 84, 62 84, 61 80 Z" fill="#FDE68A" stroke="#D97706" stroke-width="1"/>
+  
+  <!-- Knot / Cross Emblem -->
+  <path d="M64 88 L64 100 M59 93 L69 93" stroke="#F59E0B" stroke-width="2.5" stroke-linecap="round"/>
+</svg>
