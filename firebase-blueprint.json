@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "Reuniao": {
+      "title": "Reunião",
+      "description": "Reunião mensal ou formal da Equipe 13 ENS",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "data": { "type": "string", "description": "Data no formato DD/MM ou DD/MM/AAAA" },
+        "hora": { "type": "string", "description": "Horário da reunião" },
+        "tipo": { "type": "string", "description": "Tipo de reunião (Ordinária, Formal, Estudo, etc)" },
+        "local": { "type": "string", "description": "Local ou endereço" },
+        "responsavel": { "type": "string", "description": "Casal responsável" },
+        "observacoes": { "type": "string", "description": "Observações, links de mapa ou documentos" },
+        "mes": { "type": "number", "description": "Mês numérico (1-12)" },
+        "ano": { "type": "number", "description": "Ano numérico (ex: 2026)" }
+      },
+      "required": ["data", "tipo", "mes", "ano"]
+    },
+    "Evento": {
+      "title": "Evento",
+      "description": "Evento social ou religioso da equipe",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "data": { "type": "string" },
+        "hora": { "type": "string" },
+        "evento": { "type": "string" },
+        "local": { "type": "string" },
+        "mes": { "type": "number" },
+        "ano": { "type": "number" }
+      },
+      "required": ["data", "evento", "mes", "ano"]
+    },
+    "Aniversario": {
+      "title": "Aniversário",
+      "description": "Aniversário natalício ou de matrimônio de integrantes",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "dia": { "type": "string" },
+        "nome": { "type": "string" },
+        "tipo": { "type": "string" },
+        "mes": { "type": "number" }
+      },
+      "required": ["dia", "nome", "tipo", "mes"]
+    },
+    "CasalMes": {
+      "title": "Casais do Mês",
+      "description": "Casal animador e casal anfitrião do mês",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mes": { "type": "number" },
+        "ano": { "type": "number" },
+        "animador": { "type": "string" },
+        "anfitricao": { "type": "string" }
+      },
+      "required": ["mes", "animador", "anfitricao"]
+    },
+    "CardapioItem": {
+      "title": "Item do Cardápio",
+      "description": "Prato e responsável por levar no encontro receptivo",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "anfitriao": { "type": "string" },
+        "prato": { "type": "string" },
+        "quem": { "type": "string" }
+      },
+      "required": ["anfitriao", "prato", "quem"]
+    },
+    "Reflexao": {
+      "title": "Reflexão do Tema",
+      "description": "Reflexão enviada pelo casal referente ao estudo do tema",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "coupleName": { "type": "string" },
+        "theme": { "type": "string" },
+        "year": { "type": "number" },
+        "answers": { "type": "array" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["coupleName", "theme", "year", "answers"]
+    },
+    "EmailContact": {
+      "title": "Contato de E-mail",
+      "description": "E-mail cadastrado para receber lembretes da equipe",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email"]
+    },
+    "EmailLog": {
+      "title": "Histórico de Disparos",
+      "description": "Log de notificações enviadas por e-mail",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "assunto": { "type": "string" },
+        "destinatarios": { "type": "number" },
+        "data": { "type": "string" }
+      },
+      "required": ["assunto", "data"]
+    }
+  },
+  "firestore": {
+    "/reunioes/{id}": { "schema": "Reuniao", "description": "Lista de reuniões" },
+    "/eventos/{id}": { "schema": "Evento", "description": "Lista de eventos" },
+    "/aniversarios/{id}": { "schema": "Aniversario", "description": "Lista de aniversariantes" },
+    "/casaisMes/{id}": { "schema": "CasalMes", "description": "Mapeamento dos casais do mês" },
+    "/cardapio/{id}": { "schema": "CardapioItem", "description": "Itens do cardápio receptivo por anfitrião" },
+    "/reflexoes/{id}": { "schema": "Reflexao", "description": "Reflexões enviadas pelos casais" },
+    "/emails/{id}": { "schema": "EmailContact", "description": "Endereços de e-mail da equipe" },
+    "/emailLogs/{id}": { "schema": "EmailLog", "description": "Histórico de envios de e-mails" }
+  }
+}

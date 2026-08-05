@@ -1,0 +1,6 @@
+{
+  "name": "Equipe 13 ENS",
+  "description": "Aplicativo oficial da Equipe 13 - Equipes de Nossa Senhora (ENS). Agenda, estudo do tema, aniversariantes e cardápio receptivo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
