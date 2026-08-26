@@ -183,7 +183,6 @@ export default function App() {
             temasAnoList={temasAnoList}
             refreshReflexoes={loadAllData}
             onNotify={notify}
-            onOpenReportModal={handleOpenReportModal}
           />
         )}
 

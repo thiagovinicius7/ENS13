@@ -465,12 +465,21 @@ export async function saveCasaisMes(data: Omit<CasalMes, 'id'>) {
   }
 }
 
-export async function addReflexao(data: Omit<Reflexao, 'id'>) {
+export async function addReflexao(data: Omit<Reflexao, 'id'>): Promise<string> {
+  const sanitized = {
+    coupleName: String(data.coupleName || '').trim(),
+    theme: String(data.theme || '0').trim(),
+    year: Number(data.year) || new Date().getFullYear(),
+    answers: (data.answers || []).map(a => String(a || '').trim()).filter(a => a.length > 0),
+    createdAt: data.createdAt || new Date().toISOString()
+  };
+
   try {
-    const docRef = await addDoc(collection(db, 'reflexoes'), data);
+    const docRef = await addDoc(collection(db, 'reflexoes'), sanitized);
     return docRef.id;
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'reflexoes');
+    throw err;
   }
 }
 

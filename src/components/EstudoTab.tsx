@@ -6,7 +6,9 @@ import {
   AlertTriangle,
   CheckCircle2,
   Users,
-  Award
+  Award,
+  Check,
+  Trash2
 } from 'lucide-react';
 import {
   CASAIS_DA_EQUIPE,
@@ -23,15 +25,13 @@ interface EstudoTabProps {
   temasAnoList?: TemaAno[];
   refreshReflexoes: () => void;
   onNotify: (msg: string, type: 's' | 'e' | 'i') => void;
-  onOpenReportModal: (tema: string, ano: number) => void;
 }
 
 export const EstudoTab: React.FC<EstudoTabProps> = ({
   reflexoes,
   temasAnoList = [],
   refreshReflexoes,
-  onNotify,
-  onOpenReportModal
+  onNotify
 }) => {
   const [selectedCouple, setSelectedCouple] = useState<string>('');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -68,9 +68,18 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   };
 
   const handleAddAnswerField = () => {
-    if (answers.length < 5) {
+    if (answers.length < 6) {
       setAnswers([...answers, '']);
     }
+  };
+
+  const handleRemoveAnswerField = (index: number) => {
+    if (answers.length <= 1) {
+      setAnswers(['']);
+      return;
+    }
+    const updated = answers.filter((_, i) => i !== index);
+    setAnswers(updated);
   };
 
   const handleAnswerChange = (index: number, value: string) => {
@@ -81,6 +90,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
     if (!selectedCouple || !selectedTheme || !selectedYear) {
       onNotify('Por favor, selecione o Casal, o Tema e o Ano.', 'e');
       return;
@@ -111,6 +121,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
       setAnswers(['']);
       refreshReflexoes();
     } catch (err) {
+      console.error('Erro ao enviar reflexão:', err);
       onNotify('Erro ao enviar reflexão. Tente novamente.', 'e');
     } finally {
       setSubmitting(false);
@@ -139,8 +150,8 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
     <div className="space-y-6 pb-20 md:pb-8">
       {/* Intro Header */}
       <div className="bg-white dark:bg-slate-800 rounded-2xl p-5 shadow-sm border border-slate-200/80 dark:border-slate-700/80">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-[#1C52A4] dark:bg-amber-400 text-white dark:text-[#1C52A4] flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#1C52A4] dark:bg-amber-400 text-white dark:text-[#1C52A4] flex items-center justify-center shadow-sm">
             <BookOpen className="w-5 h-5" />
           </div>
           <div>
@@ -268,16 +279,34 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
           {/* Dynamic Answer Fields */}
           <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                Respostas do Estudo ({answers.length} {answers.length === 1 ? 'questão' : 'questões'})
+              </span>
+            </div>
+
             {answers.map((ans, idx) => (
-              <div key={idx}>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
-                  Resposta {idx + 1}
-                </label>
+              <div key={idx} className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#1C52A4] dark:text-amber-300">
+                    Resposta {idx + 1}
+                  </label>
+                  {answers.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAnswerField(idx)}
+                      className="text-[11px] text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 font-semibold flex items-center gap-1"
+                      title="Remover esta questão"
+                    >
+                      <Trash2 className="w-3 h-3" /> Remover
+                    </button>
+                  )}
+                </div>
                 <textarea
                   rows={3}
                   value={ans}
                   onChange={e => handleAnswerChange(idx, e.target.value)}
-                  placeholder={`Escreva a resposta ${idx + 1} do casal...`}
+                  placeholder={`Escreva a reflexão / resposta ${idx + 1} do casal...`}
                   className="w-full bg-slate-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded-xl p-3 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#1C52A4] dark:focus:border-amber-400 transition-all resize-y"
                 />
               </div>
@@ -286,11 +315,11 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
           {/* Form Actions */}
           <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-            {answers.length < 5 && (
+            {answers.length < 6 && (
               <button
                 type="button"
                 onClick={handleAddAnswerField}
-                className="px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider text-[#1C52A4] dark:text-amber-300 border-2 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5"
+                className="px-3.5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-[#1C52A4] dark:text-amber-300 border-2 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all flex items-center gap-1.5"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Adicionar Resposta
@@ -300,7 +329,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
             <button
               type="submit"
               disabled={submitting || isDuplicate}
-              className="flex-1 sm:flex-initial bg-[#1C52A4] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider px-6 py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 sm:flex-initial bg-[#1C52A4] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider px-6 py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
             >
               <Send className="w-4 h-4" />
               {submitting ? 'Enviando...' : 'Enviar Reflexão'}
@@ -337,18 +366,40 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
           />
         </div>
 
-        {/* Status summary tag */}
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {missingCouples.length === 0 ? (
-            <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Todos os casais enviaram o estudo!
-            </span>
-          ) : (
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50 flex items-center gap-1.5">
-              <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              {submittedCouples.length} de {totalCouples} casais já enviaram ({progressPercent}%)
-            </span>
+        {/* Status summary tag & details */}
+        <div className="space-y-3 pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {missingCouples.length === 0 ? (
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Todos os casais enviaram o estudo!
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50 flex items-center gap-1.5">
+                <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                {submittedCouples.length} de {totalCouples} casais já enviaram ({progressPercent}%)
+              </span>
+            )}
+          </div>
+
+          {/* Submitted Couples list */}
+          {submittedCouples.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+                Casais que já responderam:
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {submittedCouples.map((c, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60"
+                  >
+                    <Check className="w-3 h-3" />
+                    {c}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </div>
