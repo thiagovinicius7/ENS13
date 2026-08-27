@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   Users,
   Award,
-  Check,
   Trash2
 } from 'lucide-react';
 import {
@@ -366,40 +365,18 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
           />
         </div>
 
-        {/* Status summary tag & details */}
-        <div className="space-y-3 pt-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            {missingCouples.length === 0 ? (
-              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 flex items-center gap-1.5">
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Todos os casais enviaram o estudo!
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50 flex items-center gap-1.5">
-                <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                {submittedCouples.length} de {totalCouples} casais já enviaram ({progressPercent}%)
-              </span>
-            )}
-          </div>
-
-          {/* Submitted Couples list */}
-          {submittedCouples.length > 0 && (
-            <div className="pt-2 border-t border-slate-100 dark:border-slate-700">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
-                Casais que já responderam:
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {submittedCouples.map((c, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60"
-                  >
-                    <Check className="w-3 h-3" />
-                    {c}
-                  </span>
-                ))}
-              </div>
-            </div>
+        {/* Status summary tag */}
+        <div className="pt-1">
+          {missingCouples.length === 0 ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Todos os casais enviaram o estudo!
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-700/50">
+              <Award className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              {submittedCouples.length} de {totalCouples} casais já enviaram ({progressPercent}%)
+            </span>
           )}
         </div>
       </div>

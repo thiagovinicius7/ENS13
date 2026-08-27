@@ -54,6 +54,7 @@ import {
 } from '../data/initialData';
 import { extractMonthFromDate, isDateTodayOrFuture } from '../lib/utils';
 import { SpreadsheetImporter } from './SpreadsheetImporter';
+import { RoteiroReuniaoTab } from './RoteiroReuniaoTab';
 import {
   addReuniao,
   addEvento,
@@ -113,7 +114,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   const [authenticated, setAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
   const [adminSubTab, setAdminSubTab] = useState<
-    'casais' | 'cadastros' | 'edicao' | 'exclusao' | 'cardapio' | 'relatorio' | 'emails' | 'dados' | 'planilha' | 'temasAno' | 'senha'
+    'casais' | 'cadastros' | 'edicao' | 'exclusao' | 'cardapio' | 'relatorio' | 'emails' | 'dados' | 'planilha' | 'temasAno' | 'senha' | 'roteiro'
   >('casais');
 
   // Password Management State
@@ -941,6 +942,16 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           }`}
         >
           📖 Temas do Ano
+        </button>
+        <button
+          onClick={() => setAdminSubTab('roteiro')}
+          className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all border shadow-sm ${
+            adminSubTab === 'roteiro'
+              ? 'bg-gradient-to-r from-[#6B2D38] to-[#8C3A48] text-amber-300 border-[#6B2D38] ring-2 ring-amber-400/60 font-extrabold shadow-md'
+              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-700/60 hover:bg-amber-100'
+          }`}
+        >
+          📑 Gerar Roteiro PDF
         </button>
         <button
           onClick={() => setAdminSubTab('senha')}
@@ -3848,6 +3859,18 @@ export const AdminTab: React.FC<AdminTabProps> = ({
             </div>
           </form>
         </div>
+      )}
+
+      {/* SUB TAB: ROTEIRO DA REUNIÃO FORMAL (GERADOR DE PDF) */}
+      {adminSubTab === 'roteiro' && (
+        <RoteiroReuniaoTab
+          reunioes={reunioes}
+          eventos={eventos}
+          aniversarios={aniversarios}
+          casaisMesList={casaisMesList}
+          temasAnoList={temasAnoList}
+          onNotify={onNotify}
+        />
       )}
     </div>
   );
