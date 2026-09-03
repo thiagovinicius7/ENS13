@@ -306,13 +306,9 @@ export async function fetchReflexoes(): Promise<Reflexao[]> {
     console.warn('Could not fetch reflexoes from server endpoint:', err);
   }
 
-  // 2. Fetch from Firestore (with 4-second timeout so it never hangs)
+  // 2. Fetch from Firestore
   try {
-    const snapPromise = getDocs(collection(db, 'reflexoes'));
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Firestore read timeout')), 4000)
-    );
-    const snap = await Promise.race([snapPromise, timeout]);
+    const snap = await getDocs(collection(db, 'reflexoes'));
     snap.docs.forEach(d => {
       const data = { ...d.data(), id: d.id } as Reflexao;
       const key = `${data.coupleName?.toLowerCase().trim()}_${String(data.theme).trim()}_${data.year}`;
@@ -320,27 +316,14 @@ export async function fetchReflexoes(): Promise<Reflexao[]> {
         reflexoesMap.set(key, data);
       } else {
         const existing = reflexoesMap.get(key)!;
-        if (existing.id?.startsWith('serv_') || existing.id?.startsWith('offline_')) {
+        if (existing.id?.startsWith('serv_')) {
           reflexoesMap.set(key, { ...existing, ...data });
         }
       }
     });
   } catch (err) {
-    console.warn('Direct Firestore fetchReflexoes bypassed or timed out:', err);
+    console.warn('Firestore fetchReflexoes notice:', err);
   }
-
-  // 3. Merge any offline queue from localStorage
-  try {
-    const offlineQueue = JSON.parse(localStorage.getItem('ens13_offline_reflexoes') || '[]');
-    if (Array.isArray(offlineQueue)) {
-      offlineQueue.forEach((r: Reflexao) => {
-        const key = `${r.coupleName?.toLowerCase().trim()}_${String(r.theme).trim()}_${r.year}`;
-        if (!reflexoesMap.has(key)) {
-          reflexoesMap.set(key, r);
-        }
-      });
-    }
-  } catch (e) {}
 
   return Array.from(reflexoesMap.values());
 }
@@ -522,53 +505,54 @@ export async function addReflexao(data: Omit<Reflexao, 'id'>): Promise<string> {
     createdAt: data.createdAt || new Date().toISOString()
   };
 
-  let serverSavedId = '';
+  let firestoreDocId = '';
 
-  // 1. Send to server /api/reflexoes (fast, reliable, disk-persisted, quota-independent)
+  // 1. Direct write/update to Firestore (no localStorage browser cache)
+  try {
+    const q = query(
+      collection(db, 'reflexoes'),
+      where('coupleName', '==', sanitized.coupleName),
+      where('theme', '==', sanitized.theme),
+      where('year', '==', sanitized.year)
+    );
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      const existingId = snap.docs[0].id;
+      await updateDoc(doc(db, 'reflexoes', existingId), sanitized);
+      firestoreDocId = existingId;
+      console.log('Direct Firestore reflexao updated:', firestoreDocId);
+    } else {
+      const docRef = await addDoc(collection(db, 'reflexoes'), sanitized);
+      firestoreDocId = docRef.id;
+      console.log('Direct Firestore reflexao created:', firestoreDocId);
+    }
+  } catch (fsErr) {
+    console.error('Direct Firestore write error:', fsErr);
+  }
+
+  // 2. Also ensure server endpoint has it
+  let serverSavedId = '';
   try {
     const res = await fetch('/api/reflexoes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(sanitized),
-      signal: AbortSignal.timeout(6000)
+      body: JSON.stringify({ ...sanitized, id: firestoreDocId || undefined }),
+      signal: AbortSignal.timeout(8000)
     });
     if (res.ok) {
       const json = await res.json();
       serverSavedId = json.id || '';
-      console.log('Saved reflexao via server API:', serverSavedId);
     }
   } catch (serverErr) {
-    console.warn('Server reflexao endpoint write bypassed/failed:', serverErr);
+    console.warn('Server reflexao endpoint sync notice:', serverErr);
   }
 
-  // 2. Also try direct client Firestore write with strict 3-second timeout
-  let firestoreDocId = '';
-  try {
-    const firestoreWrite = addDoc(collection(db, 'reflexoes'), sanitized);
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Firestore write timeout')), 3000)
-    );
-    const docRef = await Promise.race([firestoreWrite, timeout]);
-    firestoreDocId = docRef.id;
-    console.log('Direct Firestore write succeeded:', firestoreDocId);
-  } catch (fsErr) {
-    console.warn('Direct Firestore write bypassed (server fallback active):', fsErr);
+  const finalId = firestoreDocId || serverSavedId;
+  if (!finalId) {
+    throw new Error('Não foi possível salvar a reflexão diretamente no banco de dados. Verifique sua conexão e tente novamente.');
   }
 
-  if (serverSavedId || firestoreDocId) {
-    return firestoreDocId || serverSavedId;
-  }
-
-  // 3. Fallback: localStorage emergency offline queue
-  try {
-    const offlineQueue = JSON.parse(localStorage.getItem('ens13_offline_reflexoes') || '[]');
-    const offlineId = 'offline_' + Date.now();
-    offlineQueue.push({ ...sanitized, id: offlineId });
-    localStorage.setItem('ens13_offline_reflexoes', JSON.stringify(offlineQueue));
-    return offlineId;
-  } catch (storageErr) {
-    throw new Error('Não foi possível salvar a reflexão. Verifique sua conexão e tente novamente.');
-  }
+  return finalId;
 }
 
 export async function addEmail(email: string) {

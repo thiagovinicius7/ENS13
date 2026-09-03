@@ -44,7 +44,9 @@ import {
   MONTHS,
   CASAIS_DA_EQUIPE,
   TemaAno,
-  MONTH_THEME_MAPPING
+  MONTH_THEME_MAPPING,
+  getThemeCodeForMonth,
+  getMonthNameForThemeCode
 } from '../types';
 import {
   INITIAL_MEMBROS_EQUIPE,
@@ -206,8 +208,10 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   const [cInicioFuncao, setCInicioFuncao] = useState('');
 
   // On-screen Reflexões Viewer & Editor state
-  const [selectedReflexaoTheme, setSelectedReflexaoTheme] = useState<string>('1');
-  const [selectedReflexaoYear, setSelectedReflexaoYear] = useState<number>(2026);
+  const [selectedReflexaoTheme, setSelectedReflexaoTheme] = useState<string>(() => {
+    return getThemeCodeForMonth(new Date().getMonth());
+  });
+  const [selectedReflexaoYear, setSelectedReflexaoYear] = useState<number>(() => new Date().getFullYear());
   const [searchReflexaoText, setSearchReflexaoText] = useState<string>('');
   const [editingReflexao, setEditingReflexao] = useState<Reflexao | null>(null);
   const [editRAnswers, setEditRAnswers] = useState<string[]>([]);
@@ -3075,23 +3079,165 @@ export const AdminTab: React.FC<AdminTabProps> = ({
               </div>
 
               <button
-                onClick={() => onOpenReportModal(selectedReflexaoTheme, selectedReflexaoYear)}
+                onClick={() => onOpenReportModal(selectedReflexaoTheme === 'todos' ? '1' : selectedReflexaoTheme, selectedReflexaoYear)}
                 className="bg-[#C8952A] hover:bg-[#b08123] text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 shadow-md shrink-0"
               >
                 <FileText className="w-4 h-4" />
-                Imprimir / PDF Tema {selectedReflexaoTheme}
+                Imprimir / PDF {selectedReflexaoTheme === 'todos' ? 'Todas as Reflexões' : `Tema ${selectedReflexaoTheme === '9' ? '9 (Balanço)' : selectedReflexaoTheme}`}
               </button>
             </div>
+
+            {/* Matriz Geral de Entregas da Equipe (All Couples x Themes Matrix) */}
+            {(() => {
+              const normalizeTheme = (t: string | number) => {
+                const s = String(t).trim().toLowerCase();
+                if (s === 'balanço' || s === 'balanco' || s === '9') return '9';
+                return s;
+              };
+
+              const allThemes = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+              // Combine default team couples + any custom couple names in saved reflexoes
+              const savedCouplesForYear: string[] = [];
+              reflexoes.forEach(r => {
+                if (Number(r.year) === Number(selectedReflexaoYear) && r.coupleName) {
+                  const trimmed = r.coupleName.trim();
+                  if (trimmed && !savedCouplesForYear.includes(trimmed)) {
+                    savedCouplesForYear.push(trimmed);
+                  }
+                }
+              });
+
+              const combinedCouples: string[] = [...CASAIS_DA_EQUIPE];
+              savedCouplesForYear.forEach(c => {
+                if (!combinedCouples.some(existing => existing.toLowerCase().trim() === c.toLowerCase().trim())) {
+                  combinedCouples.push(c);
+                }
+              });
+
+              const yearReflexoes = reflexoes.filter(r => Number(r.year) === Number(selectedReflexaoYear));
+
+              return (
+                <div className="bg-slate-50 dark:bg-slate-900/60 rounded-2xl p-4 border border-slate-200 dark:border-slate-700/80 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h4 className="font-serif font-bold text-xs uppercase tracking-wider text-[#1C52A4] dark:text-amber-300 flex items-center gap-2">
+                        <Table className="w-4 h-4 text-[#C8952A]" />
+                        Painel Geral de Entregas da Equipe ({selectedReflexaoYear})
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Clique em qualquer tema com <span className="text-emerald-600 dark:text-emerald-400 font-bold">✓</span> para abrir as respostas detalhadas na tela.
+                      </p>
+                    </div>
+                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 px-3 py-1 rounded-xl border border-slate-200 dark:border-slate-700 shrink-0">
+                      Total de envios: <strong className="text-[#1C52A4] dark:text-amber-400">{yearReflexoes.length}</strong>
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse min-w-[620px]">
+                      <thead>
+                        <tr className="border-b border-slate-200 dark:border-slate-700 text-[10px] font-bold uppercase text-slate-500 dark:text-slate-400">
+                          <th className="py-2 px-2.5">Casal</th>
+                          {allThemes.map(t => (
+                            <th key={t} className="py-2 px-1 text-center">
+                              T{t === '9' ? '9*' : t}
+                            </th>
+                          ))}
+                          <th className="py-2 px-2 text-center">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                        {combinedCouples.map(couple => {
+                          const coupleSubmissions = yearReflexoes.filter(
+                            r => r.coupleName.toLowerCase().trim() === couple.toLowerCase().trim()
+                          );
+                          const totalCompleted = coupleSubmissions.length;
+
+                          return (
+                            <tr key={couple} className="hover:bg-white/70 dark:hover:bg-slate-800/60 transition-colors">
+                              <td className="py-2 px-2.5 font-semibold text-slate-800 dark:text-slate-200 text-xs">
+                                {couple}
+                              </td>
+                              {allThemes.map(t => {
+                                const submission = coupleSubmissions.find(
+                                  r => normalizeTheme(r.theme) === t
+                                );
+                                const hasSubmitted = !!submission;
+                                const isCurrentSelected = normalizeTheme(selectedReflexaoTheme) === t;
+
+                                return (
+                                  <td key={t} className="py-1.5 px-1 text-center">
+                                    {hasSubmitted ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setSelectedReflexaoTheme(t)}
+                                        title={`Ver respostas de ${couple} para o Tema ${t}`}
+                                        className={`w-6 h-6 rounded-lg text-[10px] font-bold inline-flex items-center justify-center transition-all ${
+                                          isCurrentSelected
+                                            ? 'bg-emerald-600 text-white shadow-sm ring-2 ring-emerald-400'
+                                            : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-200 dark:hover:bg-emerald-900 border border-emerald-300 dark:border-emerald-800'
+                                        }`}
+                                      >
+                                        ✓
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-300 dark:text-slate-600 font-normal select-none">
+                                        -
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              <td className="py-2 px-2 text-center font-extrabold text-[11px] text-[#1C52A4] dark:text-amber-400">
+                                {totalCompleted}/10
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="text-[10px] text-slate-400 flex items-center gap-1 pt-1">
+                    <span>* T9 = Tema 9 (Balanço da Equipe).</span>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Theme Selector Pills */}
             <div>
               <label className="block text-[11px] font-bold uppercase text-slate-400 mb-2">
                 Selecione o Tema para Leitura On-Screen:
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-5 md:grid-cols-10 gap-1.5">
-                {['0', '1', '2', '3', '4', '5', '6', '7', '8', 'Balanço'].map(t => {
-                  const count = reflexoes.filter(r => String(r.theme) === String(t) && Number(r.year) === Number(selectedReflexaoYear)).length;
-                  const isSelected = String(selectedReflexaoTheme) === String(t);
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-11 gap-1.5">
+                {/* Todos os Temas button */}
+                <button
+                  onClick={() => setSelectedReflexaoTheme('todos')}
+                  className={`p-2.5 rounded-xl text-center transition-all border ${
+                    selectedReflexaoTheme === 'todos'
+                      ? 'bg-[#1C52A4] text-white border-[#1C52A4] dark:bg-amber-400 dark:text-[#1C52A4] dark:border-amber-400 shadow-md font-bold'
+                      : 'bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600'
+                  }`}
+                >
+                  <div className="text-[10px] uppercase tracking-wider">Todos</div>
+                  <div className="text-[11px] font-extrabold mt-0.5">
+                    {reflexoes.filter(r => Number(r.year) === Number(selectedReflexaoYear)).length}
+                  </div>
+                </button>
+
+                {['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'].map(t => {
+                  const normalizeTheme = (theme: string | number) => {
+                    const s = String(theme).trim().toLowerCase();
+                    if (s === 'balanço' || s === 'balanco' || s === '9') return '9';
+                    return s;
+                  };
+
+                  const count = reflexoes.filter(
+                    r => normalizeTheme(r.theme) === t && Number(r.year) === Number(selectedReflexaoYear)
+                  ).length;
+                  const isSelected = selectedReflexaoTheme !== 'todos' && normalizeTheme(selectedReflexaoTheme) === t;
+
                   return (
                     <button
                       key={t}
@@ -3102,7 +3248,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                           : 'bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-600'
                       }`}
                     >
-                      <div className="text-[10px] uppercase tracking-wider">Tema {t}</div>
+                      <div className="text-[10px] uppercase tracking-wider">
+                        {t === '9' ? 'Balanço' : `Tema ${t}`}
+                      </div>
                       <div className="text-[11px] font-extrabold mt-0.5">{count}/7</div>
                     </button>
                   );
@@ -3118,7 +3266,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                   type="text"
                   value={searchReflexaoText}
                   onChange={(e) => setSearchReflexaoText(e.target.value)}
-                  placeholder="Buscar por nome do casal ou texto nas respostas..."
+                  placeholder="Buscar por nome do casal ou palavras-chave nas respostas..."
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-xs text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-[#1C52A4]"
                 />
               </div>
@@ -3137,23 +3285,47 @@ export const AdminTab: React.FC<AdminTabProps> = ({
 
           {/* On-Screen Answers Display List */}
           {(() => {
+            const normalizeTheme = (theme: string | number) => {
+              const s = String(theme).trim().toLowerCase();
+              if (s === 'balanço' || s === 'balanco' || s === '9') return '9';
+              return s;
+            };
+
             const filteredReflexoes = reflexoes.filter(r => {
-              const matchTheme = String(r.theme) === String(selectedReflexaoTheme);
+              const normRTheme = normalizeTheme(r.theme);
+              const matchTheme = selectedReflexaoTheme === 'todos' || normRTheme === normalizeTheme(selectedReflexaoTheme);
               const matchYear = Number(r.year) === Number(selectedReflexaoYear);
               const q = searchReflexaoText.toLowerCase().trim();
               const matchSearch = !q ||
                 (r.coupleName && r.coupleName.toLowerCase().includes(q)) ||
-                (r.answers && r.answers.some(a => a.toLowerCase().includes(q)));
+                (r.answers && r.answers.some(a => String(a || '').toLowerCase().includes(q)));
               return matchTheme && matchYear && matchSearch;
             });
 
             const submittedNames = reflexoes
-              .filter(r => String(r.theme) === String(selectedReflexaoTheme) && Number(r.year) === Number(selectedReflexaoYear))
-              .map(r => r.coupleName.toLowerCase());
+              .filter(r => {
+                const normRTheme = normalizeTheme(r.theme);
+                const matchTheme = selectedReflexaoTheme === 'todos' || normRTheme === normalizeTheme(selectedReflexaoTheme);
+                return matchTheme && Number(r.year) === Number(selectedReflexaoYear);
+              })
+              .map(r => r.coupleName.toLowerCase().trim());
 
-            const missingCouples = CASAIS_DA_EQUIPE.filter(
-              c => !submittedNames.some(s => s.includes(c.toLowerCase()) || c.toLowerCase().includes(s))
-            );
+            const missingCouples = selectedReflexaoTheme === 'todos'
+              ? []
+              : CASAIS_DA_EQUIPE.filter(
+                  c => !submittedNames.some(s => s.includes(c.toLowerCase()) || c.toLowerCase().includes(s))
+                );
+
+            const formatDisplayDate = (dateStr?: string) => {
+              if (!dateStr) return 'Data não informada';
+              if (dateStr.includes('/')) return dateStr;
+              try {
+                const d = new Date(dateStr);
+                return isNaN(d.getTime()) ? dateStr : d.toLocaleString('pt-BR');
+              } catch {
+                return dateStr;
+              }
+            };
 
             return (
               <div className="space-y-4">
@@ -3161,21 +3333,25 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                 <div className="bg-[#1C52A4] text-white p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3 shadow-sm">
                   <div>
                     <h4 className="font-serif font-bold text-sm text-amber-300">
-                      Reflexões Registradas — Tema {selectedReflexaoTheme} ({selectedReflexaoYear})
+                      {selectedReflexaoTheme === 'todos'
+                        ? `Todas as Reflexões Registradas (${selectedReflexaoYear})`
+                        : `Reflexões Registradas — Tema ${selectedReflexaoTheme === '9' ? '9 (Balanço)' : selectedReflexaoTheme} (${selectedReflexaoYear})`}
                     </h4>
                     <p className="text-xs text-slate-300 mt-0.5">
-                      {filteredReflexoes.length} casais com respostas gravadas no sistema
+                      {filteredReflexoes.length} {filteredReflexoes.length === 1 ? 'resposta gravada' : 'respostas gravadas'} no sistema
                     </p>
                   </div>
-                  {missingCouples.length > 0 ? (
-                    <div className="text-[11px] text-amber-200 bg-amber-900/40 border border-amber-500/30 px-3 py-1.5 rounded-xl font-medium">
-                      {missingCouples.length} casais pendentes: {missingCouples.join(', ')}
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-emerald-300 bg-emerald-900/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-medium flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      100% da equipe respondeu!
-                    </div>
+                  {selectedReflexaoTheme !== 'todos' && (
+                    missingCouples.length > 0 ? (
+                      <div className="text-[11px] text-amber-200 bg-amber-900/40 border border-amber-500/30 px-3 py-1.5 rounded-xl font-medium">
+                        {missingCouples.length} casais pendentes: {missingCouples.join(', ')}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-emerald-300 bg-emerald-900/40 border border-emerald-500/30 px-3 py-1.5 rounded-xl font-medium flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        100% da equipe respondeu!
+                      </div>
+                    )
                   )}
                 </div>
 
@@ -3183,11 +3359,11 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                 {filteredReflexoes.length === 0 && (
                   <div className="bg-white dark:bg-slate-800 rounded-2xl p-8 text-center border border-slate-200 dark:border-slate-700 space-y-2">
                     <p className="text-slate-400 dark:text-slate-500 text-xs font-semibold">
-                      Nenhuma resposta de reflexão encontrada para o Tema {selectedReflexaoTheme} ({selectedReflexaoYear})
+                      Nenhuma resposta de reflexão encontrada para {selectedReflexaoTheme === 'todos' ? 'o ano selecionado' : `o Tema ${selectedReflexaoTheme}`} ({selectedReflexaoYear})
                       {searchReflexaoText ? ` com o termo "${searchReflexaoText}"` : ''}.
                     </p>
                     <p className="text-[11px] text-slate-400">
-                      Você pode importar dados antigos da planilha na aba "📥 Importar Planilha" ou preencher o formulário na aba "📖 Estudo".
+                      Você pode conferir a matriz acima para ver quais temas possuem envios salvos ou preencher na aba "📖 Estudo".
                     </p>
                   </div>
                 )}
@@ -3204,11 +3380,16 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                           {item.coupleName ? item.coupleName.charAt(0) : 'C'}
                         </span>
                         <div>
-                          <h4 className="font-serif font-bold text-sm text-[#1C52A4] dark:text-amber-300">
-                            {item.coupleName}
-                          </h4>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-serif font-bold text-sm text-[#1C52A4] dark:text-amber-300">
+                              {item.coupleName}
+                            </h4>
+                            <span className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold">
+                              Tema {item.theme === '9' ? '9 (Balanço)' : item.theme}
+                            </span>
+                          </div>
                           <span className="text-[10px] text-slate-400">
-                            Enviado em: {item.createdAt ? new Date(item.createdAt).toLocaleDateString('pt-BR') : 'Data não informada'}
+                            Enviado em: {formatDisplayDate(item.createdAt)}
                           </span>
                         </div>
                       </div>
