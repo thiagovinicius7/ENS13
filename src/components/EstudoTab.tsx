@@ -9,7 +9,9 @@ import {
   Award,
   Trash2,
   Save,
-  Loader2
+  Loader2,
+  RotateCcw,
+  FileText
 } from 'lucide-react';
 import {
   CASAIS_DA_EQUIPE,
@@ -42,6 +44,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   const [answers, setAnswers] = useState<string[]>(['']);
   const [submitting, setSubmitting] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
+  const [savedDraft, setSavedDraft] = useState<string[] | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
 
   // Find theme config for selected year
@@ -67,10 +70,11 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
     setIsDuplicate(exists);
   }, [selectedCouple, selectedTheme, selectedYear, reflexoes]);
 
-  // Load draft when couple or theme or year changes
+  // Check if a saved draft exists (DO NOT auto-fill answers; user must click to restore)
   useEffect(() => {
+    setDraftRestored(false);
     if (!selectedCouple || !selectedTheme || !selectedYear) {
-      setDraftRestored(false);
+      setSavedDraft(null);
       return;
     }
 
@@ -79,39 +83,49 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
       const saved = localStorage.getItem(key);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(a => a.trim().length > 0)) {
-          setAnswers(parsed);
-          setDraftRestored(true);
+        if (Array.isArray(parsed) && parsed.length > 0 && parsed.some(a => String(a).trim().length > 0)) {
+          setSavedDraft(parsed);
           return;
         }
       }
     } catch (e) {
       // ignore
     }
-    setDraftRestored(false);
+    setSavedDraft(null);
   }, [selectedCouple, selectedTheme, selectedYear]);
 
-  // Auto-save draft when answers change
+  // If user restored the draft or is actively working on it, keep draft in sync
   useEffect(() => {
     if (!selectedCouple || !selectedTheme || !selectedYear) return;
+    if (!draftRestored && !savedDraft) return;
     const hasContent = answers.some(a => a.trim().length > 0);
     const key = getDraftKey(selectedCouple, selectedTheme, selectedYear);
     if (hasContent) {
       try {
         localStorage.setItem(key, JSON.stringify(answers));
+        setSavedDraft(answers);
       } catch (e) {
         // ignore
       }
     }
-  }, [answers, selectedCouple, selectedTheme, selectedYear]);
+  }, [answers, selectedCouple, selectedTheme, selectedYear, draftRestored, savedDraft]);
+
+  const handleRestoreDraft = () => {
+    if (savedDraft && Array.isArray(savedDraft) && savedDraft.length > 0) {
+      setAnswers([...savedDraft]);
+      setDraftRestored(true);
+      onNotify('Rascunho restaurado no formulário com sucesso!', 's');
+    }
+  };
 
   const handleClearDraft = () => {
     if (selectedCouple && selectedTheme && selectedYear) {
       const key = getDraftKey(selectedCouple, selectedTheme, selectedYear);
       localStorage.removeItem(key);
     }
-    setAnswers(['']);
+    setSavedDraft(null);
     setDraftRestored(false);
+    onNotify('Rascunho descartado.', 'i');
   };
 
   const handleManualSaveDraft = () => {
@@ -119,10 +133,17 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
       onNotify('Selecione o casal para salvar o rascunho.', 'e');
       return;
     }
+    const hasContent = answers.some(a => a.trim().length > 0);
+    if (!hasContent) {
+      onNotify('Digite ao menos uma resposta antes de salvar o rascunho.', 'e');
+      return;
+    }
     const key = getDraftKey(selectedCouple, selectedTheme, selectedYear);
     try {
       localStorage.setItem(key, JSON.stringify(answers));
-      onNotify('Rascunho salvo com segurança neste dispositivo!', 's');
+      setSavedDraft([...answers]);
+      setDraftRestored(true);
+      onNotify('Rascunho salvo com sucesso neste dispositivo!', 's');
     } catch (e) {
       onNotify('Erro ao salvar rascunho.', 'e');
     }
@@ -354,12 +375,41 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
             </div>
           )}
 
-          {/* Auto-recovered draft alert */}
+          {/* Saved draft alert with explicit Restore button */}
+          {savedDraft && !draftRestored && (
+            <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl p-3 text-xs text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="font-semibold">
+                  Existe um rascunho salvo para este casal neste tema.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleRestoreDraft}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-bold text-[11px] flex items-center gap-1.5 transition-all shadow-sm"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Restaurar Rascunho
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearDraft}
+                  className="text-[11px] underline text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 font-medium px-1"
+                >
+                  Descartar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Draft actively restored alert */}
           {draftRestored && (
             <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between gap-2">
               <span className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                Rascunho recuperado automaticamente neste aparelho!
+                Rascunho restaurado no formulário!
               </span>
               <button
                 type="button"
@@ -426,6 +476,18 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Adicionar Resposta
+                </button>
+              )}
+
+              {savedDraft && !draftRestored && (
+                <button
+                  type="button"
+                  onClick={handleRestoreDraft}
+                  title="Restaurar o rascunho salvo anteriormente"
+                  className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-amber-800 dark:text-amber-200 bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 dark:hover:bg-amber-900 border border-amber-300 dark:border-amber-700 transition-all flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-700 dark:text-amber-300" />
+                  Restaurar Rascunho
                 </button>
               )}
 
