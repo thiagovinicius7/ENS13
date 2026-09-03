@@ -40,27 +40,30 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   });
   const [answers, setAnswers] = useState<string[]>(['']);
   const [submitting, setSubmitting] = useState(false);
-  const [isDuplicate, setIsDuplicate] = useState(false);
 
   // Find theme config for selected year
   const currentYearThemeConfig = temasAnoList.find(t => Number(t.year) === Number(selectedYear));
   const currentThemeTitle = currentYearThemeConfig?.temas?.[selectedTheme] || '';
   const monthNameForCurrentTheme = getMonthNameForThemeCode(selectedTheme);
 
-  // Check duplicate submission
+  // Find existing reflection for selected couple + theme + year
+  const existingReflection = reflexoes.find(
+    r =>
+      r.coupleName?.toLowerCase().trim() === selectedCouple.toLowerCase().trim() &&
+      String(r.theme).trim() === String(selectedTheme).trim() &&
+      Number(r.year) === Number(selectedYear)
+  );
+
+  // Auto-populate answers if the couple has already submitted for this theme
   useEffect(() => {
-    if (!selectedCouple || !selectedTheme || !selectedYear) {
-      setIsDuplicate(false);
-      return;
+    if (existingReflection && existingReflection.answers && existingReflection.answers.length > 0) {
+      // If the current answers are empty, pre-fill them
+      const isCurrentlyEmpty = answers.length === 1 && answers[0].trim() === '';
+      if (isCurrentlyEmpty) {
+        setAnswers([...existingReflection.answers]);
+      }
     }
-    const exists = reflexoes.some(
-      r =>
-        r.coupleName?.toLowerCase().trim() === selectedCouple.toLowerCase().trim() &&
-        String(r.theme).trim() === String(selectedTheme).trim() &&
-        Number(r.year) === Number(selectedYear)
-    );
-    setIsDuplicate(exists);
-  }, [selectedCouple, selectedTheme, selectedYear, reflexoes]);
+  }, [selectedCouple, selectedTheme, selectedYear, existingReflection]);
 
   const handleMonthChange = (monthIdx: number) => {
     const code = getThemeCodeForMonth(monthIdx);
@@ -96,11 +99,6 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
       return;
     }
 
-    if (isDuplicate) {
-      onNotify('Este casal já enviou a reflexão para este tema.', 'e');
-      return;
-    }
-
     const validAnswers = answers.filter(a => a.trim().length > 0);
     if (validAnswers.length === 0) {
       onNotify('Escreva ao menos uma resposta para a reflexão.', 'e');
@@ -114,12 +112,16 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
         theme: selectedTheme,
         year: selectedYear,
         answers: validAnswers,
-        createdAt: new Date().toISOString()
+        createdAt: existingReflection?.createdAt || new Date().toISOString()
       });
 
-      onNotify('Reflexão enviada e gravada com sucesso!', 's');
+      onNotify(
+        existingReflection
+          ? 'Reflexão atualizada com sucesso!'
+          : 'Reflexão enviada e gravada com sucesso!',
+        's'
+      );
 
-      setAnswers(['']);
       refreshReflexoes();
     } catch (err: any) {
       console.error('Erro ao enviar reflexão:', err);
@@ -273,11 +275,24 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
             </div>
           )}
 
-          {/* Duplicate Warning */}
-          {isDuplicate && (
-            <div className="bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl p-3 flex items-center gap-2.5 text-rose-700 dark:text-rose-300 text-xs font-semibold">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
-              Este casal já enviou a reflexão para este tema!
+          {/* Notice if reflection already exists */}
+          {existingReflection && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-blue-800 dark:text-blue-300 text-xs font-semibold">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span>Este casal já possui uma reflexão para este tema. Você pode alterar as respostas abaixo e salvar a atualização.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (existingReflection.answers && existingReflection.answers.length > 0) {
+                    setAnswers([...existingReflection.answers]);
+                  }
+                }}
+                className="text-[11px] font-bold text-blue-700 dark:text-blue-300 hover:underline ml-auto"
+              >
+                Recarregar Respostas Anteriores
+              </button>
             </div>
           )}
 
@@ -334,13 +349,18 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
             <button
               type="submit"
-              disabled={submitting || isDuplicate}
+              disabled={submitting}
               className="flex-1 sm:flex-initial bg-[#1C52A4] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider px-6 py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md hover:shadow-lg min-w-[170px]"
             >
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Enviando...</span>
+                  <span>Gravando...</span>
+                </>
+              ) : existingReflection ? (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Atualizar Reflexão</span>
                 </>
               ) : (
                 <>

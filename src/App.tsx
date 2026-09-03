@@ -125,6 +125,15 @@ export default function App() {
     }
   };
 
+  const reloadReflexoesOnly = async () => {
+    try {
+      const rf = await fetchReflexoes();
+      setReflexoes(rf);
+    } catch (err) {
+      console.warn('Erro ao recarregar reflexões:', err);
+    }
+  };
+
   useEffect(() => {
     loadAllData();
   }, []);
@@ -186,7 +195,7 @@ export default function App() {
           <EstudoTab
             reflexoes={reflexoes}
             temasAnoList={temasAnoList}
-            refreshReflexoes={loadAllData}
+            refreshReflexoes={reloadReflexoesOnly}
             onNotify={notify}
           />
         )}

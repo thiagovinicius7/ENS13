@@ -85,6 +85,11 @@ async function startServer() {
     next();
   });
 
+  // Health check endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+  });
+
   // REST endpoints for reflexoes - guaranteed fast, reliable persistence
   app.get('/api/reflexoes', (req, res) => {
     try {

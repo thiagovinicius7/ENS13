@@ -290,23 +290,7 @@ export async function fetchCardapio(): Promise<CardapioItem[]> {
 export async function fetchReflexoes(): Promise<Reflexao[]> {
   const reflexoesMap = new Map<string, Reflexao>();
 
-  // 1. Fetch from local server endpoint /api/reflexoes (guaranteed fast, unblocked)
-  try {
-    const res = await fetch('/api/reflexoes', { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
-      const serverList = await res.json();
-      if (Array.isArray(serverList)) {
-        serverList.forEach((r: Reflexao) => {
-          const key = `${r.coupleName?.toLowerCase().trim()}_${String(r.theme).trim()}_${r.year}`;
-          reflexoesMap.set(key, r);
-        });
-      }
-    }
-  } catch (err) {
-    console.warn('Could not fetch reflexoes from server endpoint:', err);
-  }
-
-  // 2. Fetch from Firestore (with 2.5-second safety timeout so it never hangs)
+  // 1. Fetch from Firestore first (base historical records)
   try {
     const fsPromise = getDocs(collection(db, 'reflexoes'));
     const timeoutPromise = new Promise<never>((_, reject) =>
@@ -316,18 +300,49 @@ export async function fetchReflexoes(): Promise<Reflexao[]> {
     snap.docs.forEach(d => {
       const data = { ...d.data(), id: d.id } as Reflexao;
       const key = `${data.coupleName?.toLowerCase().trim()}_${String(data.theme).trim()}_${data.year}`;
-      if (!reflexoesMap.has(key)) {
-        reflexoesMap.set(key, data);
-      } else {
-        const existing = reflexoesMap.get(key)!;
-        if (existing.id?.startsWith('serv_')) {
-          reflexoesMap.set(key, { ...existing, ...data });
-        }
-      }
+      reflexoesMap.set(key, data);
     });
   } catch (err) {
     console.warn('Firestore fetchReflexoes notice:', err);
   }
+
+  // 2. Fetch from local server endpoint /api/reflexoes (recent updates take precedence over Firestore)
+  try {
+    const res = await fetch('/api/reflexoes', { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const serverList = await res.json();
+      if (Array.isArray(serverList)) {
+        serverList.forEach((r: Reflexao) => {
+          const key = `${r.coupleName?.toLowerCase().trim()}_${String(r.theme).trim()}_${r.year}`;
+          const existing = reflexoesMap.get(key);
+          if (existing) {
+            // Keep firestore id if server record was temporary, but take the latest answers
+            reflexoesMap.set(key, { ...existing, ...r, id: existing.id || r.id });
+          } else {
+            reflexoesMap.set(key, r);
+          }
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Could not fetch reflexoes from server endpoint:', err);
+  }
+
+  // 3. Merge with local backup storage if any
+  try {
+    const cached = localStorage.getItem('ens13_cached_reflexoes');
+    if (cached) {
+      const localList: Reflexao[] = JSON.parse(cached);
+      if (Array.isArray(localList)) {
+        localList.forEach(lr => {
+          const key = `${lr.coupleName?.toLowerCase().trim()}_${String(lr.theme).trim()}_${lr.year}`;
+          if (!reflexoesMap.has(key)) {
+            reflexoesMap.set(key, lr);
+          }
+        });
+      }
+    }
+  } catch (e) {}
 
   return Array.from(reflexoesMap.values());
 }
@@ -509,28 +524,47 @@ export async function addReflexao(data: Omit<Reflexao, 'id'>): Promise<string> {
     createdAt: data.createdAt || new Date().toISOString()
   };
 
-  // 1. Immediately save to server endpoint /api/reflexoes (fast, 100% reliable, quota-independent)
-  let serverSavedId = '';
+  let savedId = '';
+
+  // 1. Immediately save to server endpoint /api/reflexoes (fast, unblocked, persists in data/reflexoes.json)
   try {
     const res = await fetch('/api/reflexoes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(sanitized),
-      signal: AbortSignal.timeout(5000)
+      signal: AbortSignal.timeout(4000)
     });
     if (res.ok) {
       const json = await res.json();
-      serverSavedId = json.id || '';
-      console.log('Reflexao salva com sucesso via API servidor:', serverSavedId);
+      savedId = json.id || json.record?.id || '';
+      console.log('Reflexao gravada via servidor com sucesso:', savedId);
     }
   } catch (serverErr) {
-    console.warn('Server reflexao endpoint aviso:', serverErr);
+    console.warn('Servidor reflexao POST aviso:', serverErr);
   }
 
-  // 2. Direct write/update to Firestore with 2-second timeout (failsafe, quota-safe)
-  let firestoreDocId = '';
+  // 2. Always persist locally in browser localStorage as immediate failsafe
   try {
-    const fsOperation = (async () => {
+    const key = `${sanitized.coupleName.toLowerCase()}_${sanitized.theme}_${sanitized.year}`;
+    const cached = localStorage.getItem('ens13_cached_reflexoes');
+    const list: Reflexao[] = cached ? JSON.parse(cached) : [];
+    const localId = savedId || 'rec_' + Date.now();
+    const updated = list.filter(
+      r => `${r.coupleName?.toLowerCase().trim()}_${String(r.theme).trim()}_${r.year}` !== key
+    );
+    updated.push({
+      id: localId,
+      ...sanitized
+    });
+    localStorage.setItem('ens13_cached_reflexoes', JSON.stringify(updated));
+    if (!savedId) savedId = localId;
+  } catch (lsErr) {
+    console.warn('LocalStorage backup aviso:', lsErr);
+  }
+
+  // 3. Background attempt to write to Firestore (fire-and-forget, non-blocking)
+  (async () => {
+    try {
       const q = query(
         collection(db, 'reflexoes'),
         where('coupleName', '==', sanitized.coupleName),
@@ -541,29 +575,21 @@ export async function addReflexao(data: Omit<Reflexao, 'id'>): Promise<string> {
       if (!snap.empty) {
         const existingId = snap.docs[0].id;
         await updateDoc(doc(db, 'reflexoes', existingId), sanitized);
-        return existingId;
+        console.log('Firestore background update completed:', existingId);
       } else {
         const docRef = await addDoc(collection(db, 'reflexoes'), sanitized);
-        return docRef.id;
+        console.log('Firestore background write completed:', docRef.id);
       }
-    })();
+    } catch (fsErr) {
+      console.warn('Firestore background write status:', fsErr);
+    }
+  })();
 
-    const timeoutPromise = new Promise<string>((_, reject) =>
-      setTimeout(() => reject(new Error('Firestore write timeout')), 2000)
-    );
-
-    firestoreDocId = await Promise.race([fsOperation, timeoutPromise]);
-    console.log('Direct Firestore reflexao written:', firestoreDocId);
-  } catch (fsErr) {
-    console.warn('Direct Firestore write deferred (local server persistence active):', fsErr);
-  }
-
-  const finalId = serverSavedId || firestoreDocId;
-  if (!finalId) {
+  if (!savedId) {
     throw new Error('Não foi possível salvar a reflexão. Verifique sua conexão e tente novamente.');
   }
 
-  return finalId;
+  return savedId;
 }
 
 export async function addEmail(email: string) {
