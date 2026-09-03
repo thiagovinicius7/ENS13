@@ -288,13 +288,61 @@ export async function fetchCardapio(): Promise<CardapioItem[]> {
 }
 
 export async function fetchReflexoes(): Promise<Reflexao[]> {
+  const reflexoesMap = new Map<string, Reflexao>();
+
+  // 1. Fetch from local server endpoint /api/reflexoes (guaranteed fast, unblocked)
   try {
-    const snap = await getDocs(collection(db, 'reflexoes'));
-    return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Reflexao));
+    const res = await fetch('/api/reflexoes', { signal: AbortSignal.timeout(4000) });
+    if (res.ok) {
+      const serverList = await res.json();
+      if (Array.isArray(serverList)) {
+        serverList.forEach((r: Reflexao) => {
+          const key = `${r.coupleName?.toLowerCase().trim()}_${String(r.theme).trim()}_${r.year}`;
+          reflexoesMap.set(key, r);
+        });
+      }
+    }
   } catch (err) {
-    handleFirestoreError(err, OperationType.GET, 'reflexoes');
-    return [];
+    console.warn('Could not fetch reflexoes from server endpoint:', err);
   }
+
+  // 2. Fetch from Firestore (with 4-second timeout so it never hangs)
+  try {
+    const snapPromise = getDocs(collection(db, 'reflexoes'));
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore read timeout')), 4000)
+    );
+    const snap = await Promise.race([snapPromise, timeout]);
+    snap.docs.forEach(d => {
+      const data = { ...d.data(), id: d.id } as Reflexao;
+      const key = `${data.coupleName?.toLowerCase().trim()}_${String(data.theme).trim()}_${data.year}`;
+      if (!reflexoesMap.has(key)) {
+        reflexoesMap.set(key, data);
+      } else {
+        const existing = reflexoesMap.get(key)!;
+        if (existing.id?.startsWith('serv_') || existing.id?.startsWith('offline_')) {
+          reflexoesMap.set(key, { ...existing, ...data });
+        }
+      }
+    });
+  } catch (err) {
+    console.warn('Direct Firestore fetchReflexoes bypassed or timed out:', err);
+  }
+
+  // 3. Merge any offline queue from localStorage
+  try {
+    const offlineQueue = JSON.parse(localStorage.getItem('ens13_offline_reflexoes') || '[]');
+    if (Array.isArray(offlineQueue)) {
+      offlineQueue.forEach((r: Reflexao) => {
+        const key = `${r.coupleName?.toLowerCase().trim()}_${String(r.theme).trim()}_${r.year}`;
+        if (!reflexoesMap.has(key)) {
+          reflexoesMap.set(key, r);
+        }
+      });
+    }
+  } catch (e) {}
+
+  return Array.from(reflexoesMap.values());
 }
 
 export async function fetchEmails(): Promise<EmailContact[]> {
@@ -474,12 +522,52 @@ export async function addReflexao(data: Omit<Reflexao, 'id'>): Promise<string> {
     createdAt: data.createdAt || new Date().toISOString()
   };
 
+  let serverSavedId = '';
+
+  // 1. Send to server /api/reflexoes (fast, reliable, disk-persisted, quota-independent)
   try {
-    const docRef = await addDoc(collection(db, 'reflexoes'), sanitized);
-    return docRef.id;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, 'reflexoes');
-    throw err;
+    const res = await fetch('/api/reflexoes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sanitized),
+      signal: AbortSignal.timeout(6000)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      serverSavedId = json.id || '';
+      console.log('Saved reflexao via server API:', serverSavedId);
+    }
+  } catch (serverErr) {
+    console.warn('Server reflexao endpoint write bypassed/failed:', serverErr);
+  }
+
+  // 2. Also try direct client Firestore write with strict 3-second timeout
+  let firestoreDocId = '';
+  try {
+    const firestoreWrite = addDoc(collection(db, 'reflexoes'), sanitized);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Firestore write timeout')), 3000)
+    );
+    const docRef = await Promise.race([firestoreWrite, timeout]);
+    firestoreDocId = docRef.id;
+    console.log('Direct Firestore write succeeded:', firestoreDocId);
+  } catch (fsErr) {
+    console.warn('Direct Firestore write bypassed (server fallback active):', fsErr);
+  }
+
+  if (serverSavedId || firestoreDocId) {
+    return firestoreDocId || serverSavedId;
+  }
+
+  // 3. Fallback: localStorage emergency offline queue
+  try {
+    const offlineQueue = JSON.parse(localStorage.getItem('ens13_offline_reflexoes') || '[]');
+    const offlineId = 'offline_' + Date.now();
+    offlineQueue.push({ ...sanitized, id: offlineId });
+    localStorage.setItem('ens13_offline_reflexoes', JSON.stringify(offlineQueue));
+    return offlineId;
+  } catch (storageErr) {
+    throw new Error('Não foi possível salvar a reflexão. Verifique sua conexão e tente novamente.');
   }
 }
 
@@ -510,6 +598,19 @@ export async function addEmailLog(log: Omit<EmailLog, 'id'>) {
 }
 
 export async function updateItemById(collectionName: string, id: string, data: any) {
+  // If reflexoes, also sync with server API
+  if (collectionName === 'reflexoes') {
+    try {
+      await fetch(`/api/reflexoes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    } catch (e) {
+      console.warn('Server reflexao update failed:', e);
+    }
+  }
+
   try {
     if (!id) throw new Error('ID do item não especificado.');
     const { id: _, ...payload } = data;
@@ -564,6 +665,15 @@ function normalizeStr(str: string): string {
 }
 
 export async function deleteItemById(collectionName: string, id: string): Promise<number> {
+  // If reflexoes, also sync deletion with server API
+  if (collectionName === 'reflexoes') {
+    try {
+      await fetch(`/api/reflexoes/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Server reflexao delete failed:', e);
+    }
+  }
+
   try {
     if (!id) throw new Error('ID do item não especificado.');
 

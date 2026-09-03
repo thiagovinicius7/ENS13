@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { AgendaTab } from './components/AgendaTab';
@@ -82,12 +82,17 @@ export default function App() {
     }
   }, [darkMode]);
 
+  const isInitializedRef = useRef(false);
+
   // Load all data
   const loadAllData = async () => {
     setLoading(true);
     try {
-      await testFirestoreConnection();
-      await seedInitialDataIfNeeded();
+      if (!isInitializedRef.current) {
+        isInitializedRef.current = true;
+        testFirestoreConnection().catch(() => {});
+        seedInitialDataIfNeeded().catch(() => {});
+      }
 
       const [r, e, a, c, cd, rf, em, el, mb, ta] = await Promise.all([
         fetchReunioes(),
