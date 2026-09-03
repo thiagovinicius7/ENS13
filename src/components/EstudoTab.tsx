@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BookOpen,
   Plus,
@@ -8,10 +8,8 @@ import {
   Users,
   Award,
   Trash2,
-  Loader2,
   Save,
-  Edit3,
-  RotateCcw
+  Loader2
 } from 'lucide-react';
 import {
   CASAIS_DA_EQUIPE,
@@ -44,7 +42,6 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   const [answers, setAnswers] = useState<string[]>(['']);
   const [submitting, setSubmitting] = useState(false);
   const [isDuplicate, setIsDuplicate] = useState(false);
-  const [isEditingMode, setIsEditingMode] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
 
   // Find theme config for selected year
@@ -59,7 +56,6 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   useEffect(() => {
     if (!selectedCouple || !selectedTheme || !selectedYear) {
       setIsDuplicate(false);
-      setIsEditingMode(false);
       return;
     }
     const exists = reflexoes.some(
@@ -69,9 +65,6 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
         Number(r.year) === Number(selectedYear)
     );
     setIsDuplicate(exists);
-    if (!exists) {
-      setIsEditingMode(false);
-    }
   }, [selectedCouple, selectedTheme, selectedYear, reflexoes]);
 
   // Load draft when couple or theme or year changes
@@ -81,7 +74,6 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
       return;
     }
 
-    // If duplicate and not editing mode, don't auto-overwrite
     const key = getDraftKey(selectedCouple, selectedTheme, selectedYear);
     try {
       const saved = localStorage.getItem(key);
@@ -120,21 +112,6 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
     }
     setAnswers(['']);
     setDraftRestored(false);
-    setIsEditingMode(false);
-  };
-
-  const handleLoadPreviousAnswers = () => {
-    const existing = reflexoes.find(
-      r =>
-        r.coupleName?.toLowerCase().trim() === selectedCouple.toLowerCase().trim() &&
-        String(r.theme).trim() === String(selectedTheme).trim() &&
-        Number(r.year) === Number(selectedYear)
-    );
-    if (existing && existing.answers && existing.answers.length > 0) {
-      setAnswers([...existing.answers]);
-      setIsEditingMode(true);
-      onNotify('Respostas anteriores carregadas no formulário para você atualizar.', 'i');
-    }
   };
 
   const handleManualSaveDraft = () => {
@@ -185,8 +162,8 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
       return;
     }
 
-    if (isDuplicate && !isEditingMode) {
-      onNotify('Este casal já enviou a reflexão para este tema. Clique em "Carregar respostas para atualizar".', 'e');
+    if (isDuplicate) {
+      onNotify('Este casal já enviou a reflexão para este tema.', 'e');
       return;
     }
 
@@ -198,7 +175,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
     setSubmitting(true);
     try {
-      // 8-second safety timeout so button is NEVER stuck in "Enviando..."
+      // Safety timeout so button is never stuck
       const savePromise = addReflexao({
         coupleName: selectedCouple,
         theme: selectedTheme,
@@ -209,21 +186,20 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error('O tempo limite de conexão expirou, mas suas respostas foram preservadas. Tente novamente.')),
+          () => reject(new Error('Tempo limite de conexão excedido, mas suas respostas foram preservadas. Tente novamente.')),
           9000
         )
       );
 
       await Promise.race([savePromise, timeoutPromise]);
 
-      onNotify(isEditingMode ? 'Reflexão atualizada com sucesso!' : 'Reflexão enviada com sucesso!', 's');
+      onNotify('Reflexão enviada com sucesso!', 's');
 
-      // Clear draft on successful submission
+      // Clear draft on success
       const key = getDraftKey(selectedCouple, selectedTheme, selectedYear);
       localStorage.removeItem(key);
 
       setAnswers(['']);
-      setIsEditingMode(false);
       setDraftRestored(false);
       refreshReflexoes();
     } catch (err: any) {
@@ -379,7 +355,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
           )}
 
           {/* Auto-recovered draft alert */}
-          {draftRestored && !isEditingMode && (
+          {draftRestored && (
             <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 text-xs text-emerald-800 dark:text-emerald-300 flex items-center justify-between gap-2">
               <span className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -395,45 +371,11 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
             </div>
           )}
 
-          {/* Duplicate Warning & Edit Option */}
+          {/* Duplicate Warning */}
           {isDuplicate && (
-            <div
-              className={`rounded-xl p-3.5 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all ${
-                isEditingMode
-                  ? 'bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300'
-                  : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                {isEditingMode ? (
-                  <Edit3 className="w-4 h-4 shrink-0 text-[#1C52A4] dark:text-blue-400" />
-                ) : (
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                )}
-                <span className="font-semibold">
-                  {isEditingMode
-                    ? 'Modo de atualização ativado: edite os campos abaixo e clique em "Salvar / Atualizar".'
-                    : 'Este casal já possui uma reflexão enviada para este tema.'}
-                </span>
-              </div>
-              {!isEditingMode ? (
-                <button
-                  type="button"
-                  onClick={handleLoadPreviousAnswers}
-                  className="px-3 py-1.5 rounded-lg bg-amber-200/80 hover:bg-amber-300 dark:bg-amber-800 dark:hover:bg-amber-700 text-amber-950 dark:text-amber-100 font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all shrink-0 shadow-sm"
-                >
-                  <Edit3 className="w-3.5 h-3.5" />
-                  Carregar para atualizar
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsEditingMode(false)}
-                  className="text-[11px] text-blue-700 dark:text-blue-300 underline font-semibold shrink-0"
-                >
-                  Cancelar edição
-                </button>
-              )}
+            <div className="bg-rose-50 dark:bg-rose-900/30 border border-rose-200 dark:border-rose-800 rounded-xl p-3 flex items-center gap-2.5 text-rose-700 dark:text-rose-300 text-xs font-semibold">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+              Este casal já enviou a reflexão para este tema!
             </div>
           )}
 
@@ -500,7 +442,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
             <button
               type="submit"
-              disabled={submitting || (isDuplicate && !isEditingMode)}
+              disabled={submitting || isDuplicate}
               className="flex-1 sm:flex-initial bg-[#1C52A4] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider px-6 py-3 rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-md hover:shadow-lg min-w-[170px]"
             >
               {submitting ? (
@@ -511,7 +453,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>{isEditingMode ? 'Atualizar Reflexão' : 'Enviar Reflexão'}</span>
+                  <span>Enviar Reflexão</span>
                 </>
               )}
             </button>
