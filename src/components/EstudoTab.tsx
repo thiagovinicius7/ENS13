@@ -109,23 +109,13 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
 
     setSubmitting(true);
     try {
-      // Safety timeout so button is never stuck
-      const savePromise = addReflexao({
+      await addReflexao({
         coupleName: selectedCouple,
         theme: selectedTheme,
         year: selectedYear,
         answers: validAnswers,
         createdAt: new Date().toISOString()
       });
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error('Tempo limite de conexão excedido, mas suas respostas foram preservadas. Tente novamente.')),
-          9000
-        )
-      );
-
-      await Promise.race([savePromise, timeoutPromise]);
 
       onNotify('Reflexão enviada e gravada com sucesso!', 's');
 
