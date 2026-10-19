@@ -90,6 +90,8 @@ export interface MembroEquipe {
   dataCasamento?: string;
   equipe?: string;
   numeroInscricao?: string;
+  ativo?: boolean; // false = casal saiu da equipe (fica no histórico, some das listas)
+  saidaEm?: string; // data ISO em que o casal saiu da equipe
 }
 
 export interface EmailContact {

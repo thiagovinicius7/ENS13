@@ -9,6 +9,7 @@ interface ReportModalProps {
   ano: number;
   reflexoes: Reflexao[];
   temasAnoList?: TemaAno[];
+  totalCasais?: number;
 }
 
 export const ReportModal: React.FC<ReportModalProps> = ({
@@ -17,7 +18,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   tema,
   ano,
   reflexoes,
-  temasAnoList = []
+  temasAnoList = [],
+  totalCasais = CASAIS_DA_EQUIPE.length
 }) => {
   if (!isOpen) return null;
 
@@ -67,7 +69,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
               ESTUDO DO TEMA ${tema} ${monthName ? `(${monthName})` : ''} • ANO ${ano}
               ${currentThemeTitle ? `<span class="banner-title">"${currentThemeTitle}"</span>` : ''}
             </div>
-            <div class="meta">${themeReflexoes.length} de ${CASAIS_DA_EQUIPE.length} casais responderam</div>
+            <div class="meta">${themeReflexoes.length} de ${totalCasais} casais responderam</div>
             ${
               themeReflexoes.length === 0
                 ? '<p style="text-align:center; color:#94a3b8;">Nenhuma reflexão registrada para este tema até o momento.</p>'
@@ -164,7 +166,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           {/* Participation Counter */}
           <div className="text-center">
             <p className="text-xs italic text-slate-500 dark:text-slate-400">
-              {themeReflexoes.length} de {CASAIS_DA_EQUIPE.length} casais responderam
+              {themeReflexoes.length} de {totalCasais} casais responderam
             </p>
           </div>
 

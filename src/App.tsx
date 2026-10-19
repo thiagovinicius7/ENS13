@@ -31,6 +31,7 @@ import {
   fetchMembros,
   fetchTemasAnoList
 } from './lib/firebase';
+import { isMembroAtivo, getCasaisAtivos } from './lib/casais';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'agenda' | 'reflexoes' | 'admin'>('agenda');
@@ -54,6 +55,10 @@ export default function App() {
   const [membros, setMembros] = useState<MembroEquipe[]>([]);
   const [temasAnoList, setTemasAnoList] = useState<TemaAno[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Casais ativos x casais que saíram da equipe
+  const membrosAtivos = membros.filter(isMembroAtivo);
+  const exMembros = membros.filter(m => !isMembroAtivo(m));
 
   // Report Modal state
   const [reportModalOpen, setReportModalOpen] = useState(false);
@@ -185,7 +190,7 @@ export default function App() {
             aniversarios={aniversarios}
             casaisMesList={casaisMesList}
             cardapioList={cardapioList}
-            membros={membros}
+            membros={membrosAtivos}
             loading={loading}
             onNotify={notify}
           />
@@ -195,6 +200,7 @@ export default function App() {
           <EstudoTab
             reflexoes={reflexoes}
             temasAnoList={temasAnoList}
+            membros={membrosAtivos}
             refreshReflexoes={reloadReflexoesOnly}
             onNotify={notify}
           />
@@ -209,7 +215,8 @@ export default function App() {
             emails={emails}
             emailLogs={emailLogs}
             reflexoes={reflexoes}
-            membros={membros}
+            membros={membrosAtivos}
+            exMembros={exMembros}
             cardapioList={cardapioList}
             temasAnoList={temasAnoList}
             refreshData={loadAllData}
@@ -231,6 +238,7 @@ export default function App() {
         ano={reportAno}
         reflexoes={reflexoes}
         temasAnoList={temasAnoList}
+        totalCasais={getCasaisAtivos(membrosAtivos).length}
       />
     </div>
   );

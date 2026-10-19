@@ -28,7 +28,10 @@ import {
   Utensils,
   MessageCircle,
   Share2,
-  Sparkles
+  Sparkles,
+  UserMinus,
+  RotateCcw,
+  History
 } from 'lucide-react';
 import {
   Reuniao,
@@ -77,8 +80,14 @@ import {
   cleanDuplicateCardapio,
   saveTemaAno,
   fetchAdminPassword,
-  saveAdminPassword
+  saveAdminPassword,
+  incluirCasalNaEquipe,
+  reativarCasalNaEquipe,
+  removerCasalDaEquipe,
+  excluirCadastroCasal,
+  sincronizarAniversariosDoCasal
 } from '../lib/firebase';
+import { getCasaisAtivos, getCasaisEstudo, sameCouple } from '../lib/casais';
 
 interface AdminTabProps {
   reunioes: Reuniao[];
@@ -89,6 +98,7 @@ interface AdminTabProps {
   emailLogs: EmailLog[];
   reflexoes: Reflexao[];
   membros?: MembroEquipe[];
+  exMembros?: MembroEquipe[];
   cardapioList?: CardapioItem[];
   temasAnoList?: TemaAno[];
   refreshData: () => void;
@@ -106,6 +116,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   emailLogs,
   reflexoes,
   membros = [],
+  exMembros = [],
   cardapioList = [],
   temasAnoList = [],
   refreshData,
@@ -197,7 +208,17 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   const [mEmailEsposa, setMEmailEsposa] = useState('');
   const [mEndereco, setMEndreco] = useState('');
   const [mFuncao, setMFuncao] = useState('');
+  const [mAnivEla, setMAnivEla] = useState('');
+  const [mAnivEle, setMAnivEle] = useState('');
+  const [mDataCasamento, setMDataCasamento] = useState('');
   const [showMembroFormModal, setShowMembroFormModal] = useState(false);
+
+  // Saída / reinclusão de casais
+  const [casalParaRemover, setCasalParaRemover] = useState<MembroEquipe | null>(null);
+  const [processandoCasal, setProcessandoCasal] = useState(false);
+
+  // Lista única dos casais ativos da equipe (usada no cardápio, estudo, etc.)
+  const casaisAtivos = getCasaisAtivos(membros);
 
   // Form state for Conselheiro / Diretor Espiritual
   const [cNome, setCNome] = useState('');
@@ -445,15 +466,33 @@ export const AdminTab: React.FC<AdminTabProps> = ({
       emailMarido: mEmailMarido,
       emailEsposa: mEmailEsposa,
       endereco: mEndereco,
-      funcao: mFuncao
+      funcao: mFuncao,
+      anivEla: mAnivEla.trim(),
+      anivEle: mAnivEle.trim(),
+      dataCasamento: mDataCasamento.trim()
     };
 
-    if (mEditingId) {
-      await updateItemById('membros', mEditingId, data);
-      onNotify(`Informações do casal ${mCasal} atualizadas com sucesso!`, 's');
-    } else {
-      await addMembro(data);
-      onNotify(`Casal ${mCasal} cadastrado com sucesso!`, 's');
+    try {
+      if (mEditingId) {
+        await updateItemById('membros', mEditingId, data);
+        await sincronizarAniversariosDoCasal(data);
+        onNotify(`Informações do casal ${mCasal} atualizadas com sucesso!`, 's');
+      } else {
+        const res = await incluirCasalNaEquipe(data);
+        const extras: string[] = [];
+        if (res.aniversarios > 0) extras.push(`${res.aniversarios} aniversário(s)`);
+        if (res.emails > 0) extras.push(`${res.emails} e-mail(s) de lembrete`);
+        onNotify(
+          `${res.reativado ? 'Casal reincluído' : 'Casal incluído'} na equipe: ${mCasal}` +
+            (extras.length ? ` (+ ${extras.join(' e ')})` : '') +
+            '. Lembre de definir os pratos dele no Cardápio.',
+          's'
+        );
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar casal:', err);
+      onNotify('Erro ao salvar casal: ' + (err.message || String(err)), 'e');
+      return;
     }
 
     // Reset form
@@ -469,6 +508,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({
     setMEmailEsposa('');
     setMEndreco('');
     setMFuncao('');
+    setMAnivEla('');
+    setMAnivEle('');
+    setMDataCasamento('');
     setShowMembroFormModal(false);
     refreshData();
   };
@@ -486,7 +528,60 @@ export const AdminTab: React.FC<AdminTabProps> = ({
     setMEmailEsposa(m.emailEsposa || '');
     setMEndreco(m.endereco || '');
     setMFuncao(m.funcao || '');
+    setMAnivEla(m.anivEla || '');
+    setMAnivEle(m.anivEle || '');
+    setMDataCasamento(m.dataCasamento || '');
     setShowMembroFormModal(true);
+  };
+
+  const handleConfirmarSaidaCasal = async () => {
+    if (!casalParaRemover) return;
+    setProcessandoCasal(true);
+    try {
+      const res = await removerCasalDaEquipe(casalParaRemover, membros);
+      const partes: string[] = [];
+      if (res.aniversarios) partes.push(`${res.aniversarios} aniversário(s)`);
+      if (res.cardapioAnfitriao) partes.push(`${res.cardapioAnfitriao} item(ns) do cardápio como anfitrião`);
+      if (res.cardapioConvidado) partes.push(`${res.cardapioConvidado} prato(s) agora "A definir"`);
+      if (res.emails) partes.push(`${res.emails} e-mail(s)`);
+      if (res.casaisMes) partes.push(`${res.casaisMes} mês(es) de animador/anfitrião`);
+      onNotify(
+        `${casalParaRemover.casal} saiu da equipe.` + (partes.length ? ` Atualizado: ${partes.join(', ')}.` : ''),
+        's'
+      );
+      setCasalParaRemover(null);
+      refreshData();
+    } catch (err: any) {
+      console.error('Erro ao tirar casal da equipe:', err);
+      onNotify('Erro ao tirar casal da equipe: ' + (err.message || String(err)), 'e');
+    } finally {
+      setProcessandoCasal(false);
+    }
+  };
+
+  const handleReincluirCasal = async (m: MembroEquipe) => {
+    setProcessandoCasal(true);
+    try {
+      const res = await reativarCasalNaEquipe(m);
+      onNotify(
+        `${m.casal} voltou para a equipe` +
+          (res.aniversarios ? ` (${res.aniversarios} aniversário(s) recriados)` : '') +
+          '. Lembre de definir os pratos dele no Cardápio.',
+        's'
+      );
+      refreshData();
+    } catch (err: any) {
+      onNotify('Erro ao reincluir casal: ' + (err.message || String(err)), 'e');
+    } finally {
+      setProcessandoCasal(false);
+    }
+  };
+
+  const handleExcluirCadastroDefinitivo = async (m: MembroEquipe) => {
+    if (!window.confirm(`Excluir definitivamente o cadastro de ${m.casal}? As reflexões já enviadas continuam guardadas.`)) return;
+    const ok = await excluirCadastroCasal(m);
+    onNotify(ok ? `Cadastro de ${m.casal} excluído.` : `Não foi possível excluir o cadastro de ${m.casal}.`, ok ? 's' : 'e');
+    refreshData();
   };
 
   const handleDeleteMembroClick = async (idOrCasal: string, casalName: string) => {
@@ -1004,11 +1099,14 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                   setMEmailEsposa('');
                   setMEndreco('');
                   setMFuncao('');
+                  setMAnivEla('');
+                  setMAnivEle('');
+                  setMDataCasamento('');
                   setShowMembroFormModal(true);
                 }}
                 className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs uppercase tracking-wider px-4 py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 w-full sm:w-auto"
               >
-                <Plus className="w-4 h-4" /> Cadastrar Novo Casal
+                <Plus className="w-4 h-4" /> Incluir Casal na Equipe
               </button>
             </div>
           </div>
@@ -1167,6 +1265,51 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">
+                      🎂 Aniversário Dela (DD/MM)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Ex: 21/12"
+                      value={mAnivEla}
+                      onChange={e => setMAnivEla(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">
+                      🎂 Aniversário Dele (DD/MM)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Ex: 22/02"
+                      value={mAnivEle}
+                      onChange={e => setMAnivEle(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">
+                      💍 Data de Casamento (DD/MM/AAAA)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Ex: 22/02/2014"
+                      value={mDataCasamento}
+                      onChange={e => setMDataCasamento(e.target.value)}
+                      className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 -mt-2">
+                  As datas preenchidas entram automaticamente na lista de aniversários da Agenda.
+                </p>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-bold uppercase text-slate-500 dark:text-slate-400 mb-1">
@@ -1206,7 +1349,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                     type="submit"
                     className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded-xl transition-all shadow-md"
                   >
-                    {mEditingId ? 'Salvar Alterações' : 'Cadastrar Casal'}
+                    {mEditingId ? 'Salvar Alterações' : 'Incluir Casal na Equipe'}
                   </button>
                 </div>
               </form>
@@ -1225,7 +1368,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                 </p>
               </div>
               <span className="text-xs font-bold bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 px-3 py-1 rounded-full">
-                Total: {(membros.length > 0 ? membros : INITIAL_MEMBROS_EQUIPE).length} casais
+                Total: {casaisAtivos.length} casais
               </span>
             </div>
 
@@ -1366,11 +1509,11 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                               <Edit3 className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDeleteMembroClick(m.id || m.casal, m.casal)}
+                              onClick={() => setCasalParaRemover(m)}
                               className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 transition-colors"
-                              title="Excluir casal"
+                              title="Tirar casal da equipe"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <UserMinus className="w-4 h-4" />
                             </button>
                           </div>
                         </td>
@@ -1381,6 +1524,101 @@ export const AdminTab: React.FC<AdminTabProps> = ({
               </table>
             </div>
           </div>
+
+          {/* Ex-casais (saíram da equipe) */}
+          {exMembros.length > 0 && (
+            <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-700 p-5 space-y-3">
+              <div>
+                <h3 className="font-serif font-bold text-base text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                  <History className="w-5 h-5 text-slate-500" /> Casais que saíram da equipe ({exMembros.length})
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  O cadastro fica guardado. Se o casal voltar, clique em <strong>Reincluir</strong> e os aniversários e e-mails são recriados.
+                </p>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-700">
+                {exMembros.map((m, idx) => (
+                  <div key={m.id || m.casal || idx} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-sm text-slate-700 dark:text-slate-200">{m.casal}</div>
+                      {m.saidaEm && (
+                        <div className="text-[11px] text-slate-400">
+                          Saiu em {new Date(m.saidaEm).toLocaleDateString('pt-BR')}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={processandoCasal}
+                        onClick={() => handleReincluirCasal(m)}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Reincluir
+                      </button>
+                      <button
+                        type="button"
+                        disabled={processandoCasal}
+                        onClick={() => handleExcluirCadastroDefinitivo(m)}
+                        className="p-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 disabled:opacity-50"
+                        title="Excluir cadastro definitivamente"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Confirmação de saída do casal */}
+          {casalParaRemover && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 dark:border-slate-700">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-300 flex items-center justify-center shrink-0">
+                    <UserMinus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif font-bold text-lg text-slate-800 dark:text-slate-100">
+                      Tirar {casalParaRemover.casal} da equipe?
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">O que vai acontecer:</p>
+                  </div>
+                </div>
+                <ul className="text-xs text-slate-700 dark:text-slate-300 space-y-1.5 pl-1">
+                  <li>• Sai da lista de casais, do Estudo do Tema e dos relatórios de pendências.</li>
+                  <li>• Os aniversários dele, dela e do casamento saem da Agenda.</li>
+                  <li>• Deixa de ser anfitrião no cardápio; os pratos que ele levaria ficam "A definir".</li>
+                  <li>• Os e-mails do casal saem da lista de lembretes.</li>
+                  <li>• Se for animador/anfitrião de um mês futuro, fica "A definir".</li>
+                  <li className="text-slate-500">• As reflexões já enviadas ficam guardadas como histórico.</li>
+                </ul>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 rounded-xl p-2.5">
+                  O cadastro fica em "Casais que saíram da equipe" e pode ser reincluído depois.
+                </p>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={processandoCasal}
+                    onClick={() => setCasalParaRemover(null)}
+                    className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-600 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    disabled={processandoCasal}
+                    onClick={handleConfirmarSaidaCasal}
+                    className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl shadow-md disabled:opacity-60"
+                  >
+                    {processandoCasal ? 'Atualizando...' : 'Tirar da equipe'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2520,18 +2758,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           {/* Matrix Spreadsheet View */}
           {(() => {
             // Master list of all couples in team
-            const allTeamCouples = Array.from(
-              new Set([
-                'Luana e Thiago',
-                'Thais e Lucas',
-                'Camila e Luciano',
-                'Danielle e Fabiano',
-                'Pâmela e Gláucio',
-                'Patrícia e Mota',
-                'Natália e Júlio',
-                ...membros.map(m => m.casal).filter(Boolean)
-              ])
-            );
+            const allTeamCouples = casaisAtivos;
 
             // Active hosts after applying excluded filter
             const activeHostCouples = allTeamCouples.filter(c => !excludedHosts.includes(c));
@@ -2860,18 +3087,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                     setIsSavingCardapio(true);
                     try {
                       {/* Save for all active hosts */}
-                      const allCouplesModal = Array.from(
-                        new Set([
-                          'Luana e Thiago',
-                          'Thais e Lucas',
-                          'Camila e Luciano',
-                          'Danielle e Fabiano',
-                          'Pâmela e Gláucio',
-                          'Patrícia e Mota',
-                          'Natália e Júlio',
-                          ...membros.map(m => m.casal).filter(Boolean)
-                        ])
-                      );
+                      const allCouplesModal = casaisAtivos;
                       const finalAssignments = { ...newDishAssignments };
                       allCouplesModal.forEach(h => {
                         if (!finalAssignments[h]) finalAssignments[h] = 'Anfitrião';
@@ -2916,18 +3132,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                       Quem deve levar para cada Anfitrião?
                     </label>
                     <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                      {Array.from(
-                        new Set([
-                          'Luana e Thiago',
-                          'Thais e Lucas',
-                          'Camila e Luciano',
-                          'Danielle e Fabiano',
-                          'Pâmela e Gláucio',
-                          'Patrícia e Mota',
-                          'Natália e Júlio',
-                          ...membros.map(m => m.casal).filter(Boolean)
-                        ])
-                      ).map(host => (
+                      {casaisAtivos.map(host => (
                         <div
                           key={host}
                           className="flex items-center justify-between gap-2 p-2 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-200 dark:border-slate-600"
@@ -2948,18 +3153,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                             <option value="Anfitrião">Anfitrião ({host})</option>
                             <option value="Casal Animador">Casal Animador</option>
                             <option value="Não participa">Não participa</option>
-                            {Array.from(
-                              new Set([
-                                'Luana e Thiago',
-                                'Thais e Lucas',
-                                'Camila e Luciano',
-                                'Danielle e Fabiano',
-                                'Pâmela e Gláucio',
-                                'Patrícia e Mota',
-                                'Natália e Júlio',
-                                ...membros.map(m => m.casal).filter(Boolean)
-                              ])
-                            ).map(c => (
+                            {casaisAtivos.map(c => (
                               <option key={c} value={c}>
                                 {c}
                               </option>
@@ -3108,9 +3302,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({
                 }
               });
 
-              const combinedCouples: string[] = [...CASAIS_DA_EQUIPE];
+              const combinedCouples: string[] = [...getCasaisEstudo(membros)];
               savedCouplesForYear.forEach(c => {
-                if (!combinedCouples.some(existing => existing.toLowerCase().trim() === c.toLowerCase().trim())) {
+                if (!combinedCouples.some(existing => sameCouple(existing, c))) {
                   combinedCouples.push(c);
                 }
               });
@@ -3312,8 +3506,8 @@ export const AdminTab: React.FC<AdminTabProps> = ({
 
             const missingCouples = selectedReflexaoTheme === 'todos'
               ? []
-              : CASAIS_DA_EQUIPE.filter(
-                  c => !submittedNames.some(s => s.includes(c.toLowerCase()) || c.toLowerCase().includes(s))
+              : getCasaisEstudo(membros).filter(
+                  c => !submittedNames.some(s => sameCouple(s, c) || s.includes(c.toLowerCase()) || c.toLowerCase().includes(s))
                 );
 
             const formatDisplayDate = (dateStr?: string) => {

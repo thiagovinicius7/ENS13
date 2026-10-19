@@ -11,18 +11,20 @@ import {
   Loader2
 } from 'lucide-react';
 import {
-  CASAIS_DA_EQUIPE,
   Reflexao,
+  MembroEquipe,
   TemaAno,
   MONTH_THEME_MAPPING,
   getThemeCodeForMonth,
   getMonthNameForThemeCode
 } from '../types';
 import { addReflexao } from '../lib/firebase';
+import { getCasaisEstudo, sameCouple } from '../lib/casais';
 
 interface EstudoTabProps {
   reflexoes: Reflexao[];
   temasAnoList?: TemaAno[];
+  membros?: MembroEquipe[];
   refreshReflexoes: () => void;
   onNotify: (msg: string, type: 's' | 'e' | 'i') => void;
 }
@@ -30,10 +32,13 @@ interface EstudoTabProps {
 export const EstudoTab: React.FC<EstudoTabProps> = ({
   reflexoes,
   temasAnoList = [],
+  membros = [],
   refreshReflexoes,
   onNotify
 }) => {
   const [selectedCouple, setSelectedCouple] = useState<string>('');
+  // Casais ativos da equipe (quem saiu da equipe não aparece mais aqui)
+  const casaisEquipe = getCasaisEstudo(membros);
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedTheme, setSelectedTheme] = useState<string>(() => {
     return getThemeCodeForMonth(new Date().getMonth());
@@ -49,7 +54,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   // Find existing reflection for selected couple + theme + year
   const existingReflection = reflexoes.find(
     r =>
-      r.coupleName?.toLowerCase().trim() === selectedCouple.toLowerCase().trim() &&
+      sameCouple(r.coupleName, selectedCouple) &&
       String(r.theme).trim() === String(selectedTheme).trim() &&
       Number(r.year) === Number(selectedYear)
   );
@@ -135,7 +140,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
   };
 
   // Calculate stats for current selected theme and year
-  const submittedCouples = reflexoes
+  const submittedNames = reflexoes
     .filter(
       r =>
         String(r.theme) === String(selectedTheme) &&
@@ -143,12 +148,15 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
     )
     .map(r => r.coupleName);
 
-  const missingCouples = CASAIS_DA_EQUIPE.filter(
-    c => !submittedCouples.some(sc => sc.toLowerCase() === c.toLowerCase())
+  // Considera apenas os casais que estão atualmente na equipe
+  const submittedCouples = casaisEquipe.filter(c => submittedNames.some(sc => sameCouple(sc, c)));
+
+  const missingCouples = casaisEquipe.filter(
+    c => !submittedNames.some(sc => sameCouple(sc, c))
   );
 
-  const totalCouples = CASAIS_DA_EQUIPE.length;
-  const progressPercent = Math.round((submittedCouples.length / totalCouples) * 100);
+  const totalCouples = casaisEquipe.length;
+  const progressPercent = totalCouples > 0 ? Math.round((submittedCouples.length / totalCouples) * 100) : 0;
 
   const availableThemeCodes = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -213,7 +221,7 @@ export const EstudoTab: React.FC<EstudoTabProps> = ({
                 className="w-full bg-slate-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded-xl p-2.5 text-xs font-semibold text-slate-800 dark:text-slate-100 outline-none focus:border-[#1C52A4] dark:focus:border-amber-400"
               >
                 <option value="">Selecione o casal...</option>
-                {CASAIS_DA_EQUIPE.map((c, i) => (
+                {casaisEquipe.map((c, i) => (
                   <option key={i} value={c}>
                     {c}
                   </option>

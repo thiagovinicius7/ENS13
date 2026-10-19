@@ -38,6 +38,7 @@ import {
   INITIAL_EMAILS_LIST,
   INITIAL_CONSELHEIRO
 } from '../data/initialData';
+import { sameCouple, normalizeName, toDiaMes, A_DEFINIR } from './casais';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
@@ -940,5 +941,288 @@ export async function cleanDuplicateCardapio() {
   } catch (err) {
     console.error('Erro ao limpar cardápio duplicado:', err);
     return 0;
+  }
+}
+
+
+// ============================================================
+// GESTÃO DE ENTRADA / SAÍDA DE CASAIS DA EQUIPE
+// ============================================================
+
+export interface ResultadoSaidaCasal {
+  aniversarios: number;
+  cardapioAnfitriao: number;
+  cardapioConvidado: number;
+  emails: number;
+  casaisMes: number;
+}
+
+export interface ResultadoEntradaCasal {
+  id?: string;
+  reativado: boolean;
+  aniversarios: number;
+  emails: number;
+}
+
+/** Localiza o documento do casal na coleção "membros" (semeando a lista inicial se estiver vazia). */
+async function findMembroDocId(membro: Partial<MembroEquipe>): Promise<string | null> {
+  let snap = await getDocs(collection(db, 'membros'));
+  if (snap.empty) {
+    for (const m of INITIAL_MEMBROS_EQUIPE) {
+      await addDoc(collection(db, 'membros'), m);
+    }
+    snap = await getDocs(collection(db, 'membros'));
+  }
+  if (membro.id) {
+    const byId = snap.docs.find(d => d.id === membro.id);
+    if (byId) return byId.id;
+  }
+  const byName = snap.docs.find(d => sameCouple(d.data().casal, membro.casal));
+  return byName ? byName.id : null;
+}
+
+/**
+ * Cria ou atualiza os aniversários (natalício dela, dele e matrimônio) a partir
+ * do cadastro do casal. Retorna quantos registros foram criados/atualizados.
+ */
+export async function sincronizarAniversariosDoCasal(membro: Partial<MembroEquipe>): Promise<number> {
+  const entradas: { nome: string; dia: string; tipo: string }[] = [];
+  const esposa = (membro.esposa || '').trim();
+  const marido = (membro.marido || '').trim();
+  const casal = (membro.casal || '').trim();
+
+  const diaEla = toDiaMes(membro.anivEla);
+  const diaEle = toDiaMes(membro.anivEle);
+  const diaCas = toDiaMes(membro.dataCasamento);
+
+  if (esposa && diaEla) entradas.push({ nome: esposa, dia: diaEla, tipo: 'Natalício' });
+  if (marido && diaEle) entradas.push({ nome: marido, dia: diaEle, tipo: 'Natalício' });
+  if (casal && diaCas) entradas.push({ nome: casal, dia: diaCas, tipo: 'Matrimônio' });
+  if (entradas.length === 0) return 0;
+
+  const snap = await getDocs(collection(db, 'aniversarios'));
+  let count = 0;
+
+  for (const ent of entradas) {
+    const mes = Number(ent.dia.split('/')[1]);
+    const existente = snap.docs.find(d => {
+      const a = d.data();
+      if (normalizeName(a.tipo) !== normalizeName(ent.tipo)) return false;
+      return ent.tipo === 'Matrimônio'
+        ? sameCouple(a.nome, ent.nome)
+        : normalizeName(a.nome) === normalizeName(ent.nome);
+    });
+
+    if (existente) {
+      const a = existente.data();
+      if (a.dia !== ent.dia || Number(a.mes) !== mes) {
+        await updateDoc(doc(db, 'aniversarios', existente.id), { dia: ent.dia, mes });
+        count++;
+      }
+    } else {
+      await addDoc(collection(db, 'aniversarios'), { nome: ent.nome, dia: ent.dia, tipo: ent.tipo, mes });
+      count++;
+    }
+  }
+  return count;
+}
+
+/** Cadastra os e-mails do casal na lista de lembretes (sem duplicar). */
+async function sincronizarEmailsDoCasal(membro: Partial<MembroEquipe>): Promise<number> {
+  const lista = [membro.emailEsposa, membro.emailMarido]
+    .map(e => (e || '').trim().toLowerCase())
+    .filter(e => e.includes('@'));
+  if (lista.length === 0) return 0;
+
+  const snap = await getDocs(collection(db, 'emails'));
+  const existentes = new Set(snap.docs.map(d => String(d.data().email || '').trim().toLowerCase()));
+  let count = 0;
+  for (const email of lista) {
+    if (existentes.has(email)) continue;
+    await addDoc(collection(db, 'emails'), {
+      email,
+      casal: membro.casal || '',
+      createdAt: new Date().toISOString()
+    });
+    existentes.add(email);
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Inclui um casal na equipe. Se o casal já esteve na equipe antes (saiu e
+ * está voltando), o cadastro antigo é reativado e atualizado.
+ * Também cria os aniversários e cadastra os e-mails para lembretes.
+ */
+export async function incluirCasalNaEquipe(data: Omit<MembroEquipe, 'id'>): Promise<ResultadoEntradaCasal> {
+  const payload: any = { ...data, ativo: true, saidaEm: '' };
+  Object.keys(payload).forEach(k => payload[k] === undefined && delete payload[k]);
+
+  let id: string | undefined;
+  let reativado = false;
+
+  try {
+    const snap = await getDocs(collection(db, 'membros'));
+    const anterior = snap.docs.find(d => sameCouple(d.data().casal, data.casal));
+    if (anterior) {
+      await updateDoc(doc(db, 'membros', anterior.id), payload);
+      id = anterior.id;
+      reativado = anterior.data().ativo === false;
+    } else {
+      const ref = await addDoc(collection(db, 'membros'), payload);
+      id = ref.id;
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'membros');
+  }
+
+  const aniversarios = await sincronizarAniversariosDoCasal(data);
+  const emails = await sincronizarEmailsDoCasal(data);
+  return { id, reativado, aniversarios, emails };
+}
+
+/** Reincluir um casal que havia saído da equipe, usando o cadastro guardado. */
+export async function reativarCasalNaEquipe(membro: MembroEquipe): Promise<ResultadoEntradaCasal> {
+  const { id: _id, ativo: _a, saidaEm: _s, ...dados } = membro;
+  return incluirCasalNaEquipe(dados);
+}
+
+/**
+ * Tira um casal da equipe:
+ * - o cadastro fica guardado como "ex-casal" (ativo = false), podendo ser reincluído;
+ * - remove os aniversários dele, dela e do matrimônio;
+ * - remove o casal como anfitrião do cardápio e troca por "A definir" onde ele levaria pratos;
+ * - remove os e-mails do casal da lista de lembretes;
+ * - troca por "A definir" nos casais animador/anfitrião dos meses que ainda vão acontecer.
+ * As reflexões já enviadas são mantidas como histórico.
+ */
+export async function removerCasalDaEquipe(
+  membro: MembroEquipe,
+  outrosMembrosAtivos: MembroEquipe[] = []
+): Promise<ResultadoSaidaCasal> {
+  const resultado: ResultadoSaidaCasal = {
+    aniversarios: 0,
+    cardapioAnfitriao: 0,
+    cardapioConvidado: 0,
+    emails: 0,
+    casaisMes: 0
+  };
+  const casal = membro.casal || '';
+  const casalAlt = membro.marido && membro.esposa ? `${membro.marido} e ${membro.esposa}` : casal;
+  const ehEsteCasal = (nome?: string) => !!nome && (sameCouple(nome, casal) || sameCouple(nome, casalAlt));
+
+  // 1. Marca o cadastro como inativo (mantém histórico)
+  try {
+    const docId = await findMembroDocId(membro);
+    const saida = { ativo: false, saidaEm: new Date().toISOString() };
+    if (docId) {
+      await updateDoc(doc(db, 'membros', docId), saida);
+    } else {
+      const { id: _id, ...dados } = membro;
+      await addDoc(collection(db, 'membros'), { ...dados, ...saida });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, 'membros');
+  }
+
+  // 2. Aniversários
+  try {
+    const outros = outrosMembrosAtivos.filter(m => !ehEsteCasal(m.casal));
+    const nomesDeOutros = new Set(
+      outros.flatMap(m => [m.marido, m.esposa]).map(n => normalizeName(n)).filter(Boolean)
+    );
+    const nomesDoCasal = [membro.marido, membro.esposa]
+      .map(n => normalizeName(n))
+      .filter(n => n && !nomesDeOutros.has(n)); // evita apagar o natalício de homônimos
+
+    const snap = await getDocs(collection(db, 'aniversarios'));
+    for (const d of snap.docs) {
+      const a = d.data();
+      const nome = String(a.nome || '');
+      const doCasal = ehEsteCasal(nome) || nomesDoCasal.includes(normalizeName(nome));
+      if (doCasal) {
+        await deleteDoc(doc(db, 'aniversarios', d.id));
+        resultado.aniversarios++;
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao remover aniversários do casal:', err);
+  }
+
+  // 3. Cardápio receptivo
+  try {
+    const snap = await getDocs(collection(db, 'cardapio'));
+    for (const d of snap.docs) {
+      const item = d.data();
+      if (ehEsteCasal(item.anfitriao)) {
+        await deleteDoc(doc(db, 'cardapio', d.id));
+        resultado.cardapioAnfitriao++;
+      } else if (ehEsteCasal(item.quem)) {
+        await updateDoc(doc(db, 'cardapio', d.id), { quem: A_DEFINIR });
+        resultado.cardapioConvidado++;
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao atualizar cardápio do casal:', err);
+  }
+
+  // 4. E-mails de lembrete
+  try {
+    const emailsDoCasal = new Set(
+      [membro.emailEsposa, membro.emailMarido]
+        .map(e => (e || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const snap = await getDocs(collection(db, 'emails'));
+    for (const d of snap.docs) {
+      const em = d.data();
+      const email = String(em.email || '').trim().toLowerCase();
+      if (emailsDoCasal.has(email) || ehEsteCasal(em.casal)) {
+        await deleteDoc(doc(db, 'emails', d.id));
+        resultado.emails++;
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao remover e-mails do casal:', err);
+  }
+
+  // 5. Casais animador/anfitrião dos próximos meses
+  try {
+    const hoje = new Date();
+    const anoAtual = hoje.getFullYear();
+    const mesAtual = hoje.getMonth() + 1;
+    const snap = await getDocs(collection(db, 'casaisMes'));
+    for (const d of snap.docs) {
+      const c = d.data();
+      const ano = Number(c.ano) || anoAtual;
+      const mes = Number(c.mes) || 0;
+      const futuro = ano > anoAtual || (ano === anoAtual && mes >= mesAtual);
+      if (!futuro) continue;
+      const updates: any = {};
+      if (ehEsteCasal(c.animador)) updates.animador = A_DEFINIR;
+      if (ehEsteCasal(c.anfitricao)) updates.anfitricao = A_DEFINIR;
+      if (Object.keys(updates).length > 0) {
+        await updateDoc(doc(db, 'casaisMes', d.id), updates);
+        resultado.casaisMes++;
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao atualizar casais do mês:', err);
+  }
+
+  return resultado;
+}
+
+/** Exclui definitivamente o cadastro de um ex-casal (não mexe nas reflexões). */
+export async function excluirCadastroCasal(membro: MembroEquipe): Promise<boolean> {
+  try {
+    const docId = await findMembroDocId(membro);
+    if (!docId) return false;
+    await deleteDoc(doc(db, 'membros', docId));
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, 'membros');
+    return false;
   }
 }

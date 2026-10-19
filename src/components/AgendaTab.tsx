@@ -34,10 +34,9 @@ import {
 } from '../types';
 import {
   INITIAL_MEMBROS_EQUIPE,
-  CARDAPIO_HOSTS,
-  CARDAPIO_MATRIX,
   INITIAL_CARDAPIO
 } from '../data/initialData';
+import { getCasaisAtivos, sameCouple } from '../lib/casais';
 import { parseTextWithLinks, extractMonthFromDate, isDateTodayOrFuture } from '../lib/utils';
 import { addEmail, fetchAdminPassword } from '../lib/firebase';
 
@@ -120,10 +119,9 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
     ...activeCardapio.map(c => c.tipoMenu || 'Café da Manhã').filter(Boolean)
   ]));
 
-  const availableHosts = Array.from(new Set([
-    ...CARDAPIO_HOSTS,
-    ...activeCardapio.map(c => c.anfitriao).filter(Boolean)
-  ]));
+  // Casais ativos da equipe (quem saiu da equipe não aparece no cardápio)
+  const casaisAtivos = getCasaisAtivos(membros);
+  const availableHosts = casaisAtivos;
 
   // Auto select host when month changes or on initial load
   useEffect(() => {
@@ -139,8 +137,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
     ? activeCardapio.filter(c => {
         const matchHost =
           c.anfitriao.toLowerCase().trim() === selectedHost.toLowerCase().trim() ||
-          c.anfitriao.toLowerCase().includes(selectedHost.toLowerCase()) ||
-          selectedHost.toLowerCase().includes(c.anfitriao.toLowerCase());
+          sameCouple(c.anfitriao, selectedHost);
 
         const itemType = (c.tipoMenu || 'Café da Manhã').toLowerCase().trim();
         const selType = (selectedMenuType || 'Café da Manhã').toLowerCase().trim();
@@ -170,6 +167,27 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
     }
   }
   const filteredCardapio = Array.from(deduplicatedMap.values());
+
+  // Planilha geral montada a partir do cardápio salvo + casais ativos
+  const matrixItems = activeCardapio.filter(c => {
+    const itemType = (c.tipoMenu || 'Café da Manhã').toLowerCase().trim();
+    const selType = (selectedMenuType || 'Café da Manhã').toLowerCase().trim();
+    const itemMes = c.mes || 0;
+    return itemType === selType && (itemMes === 0 || itemMes === monthNum);
+  });
+  const matrixHosts = casaisAtivos.filter(h => matrixItems.some(i => sameCouple(i.anfitriao, h)));
+  const matrixPratos: string[] = [];
+  matrixItems.forEach(i => {
+    const prato = (i.prato || '').trim();
+    if (prato && !matrixPratos.some(p => p.toLowerCase() === prato.toLowerCase())) matrixPratos.push(prato);
+  });
+  const getQuemLeva = (prato: string, host: string): string => {
+    const candidates = matrixItems.filter(
+      i => (i.prato || '').trim().toLowerCase() === prato.toLowerCase() && sameCouple(i.anfitriao, host)
+    );
+    const specific = candidates.find(i => i.mes === monthNum);
+    return (specific || candidates[0])?.quem || '---';
+  };
 
   const handleCopyCardapio = () => {
     if (!selectedHost || filteredCardapio.length === 0) return;
@@ -314,7 +332,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
           className="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-[#1C52A4] dark:hover:border-amber-400 text-xs font-bold uppercase tracking-wider text-[#1C52A4] dark:text-amber-300 rounded-xl shadow-sm transition-all"
         >
           <Lock className="w-4 h-4 text-[#C8952A]" />
-          Ver Membros da Equipe 13 ({INITIAL_MEMBROS_EQUIPE.length} Casais)
+          Ver Membros da Equipe 13 ({displayMembros.length} Casais)
         </button>
       </div>
 
@@ -534,19 +552,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
 
         {/* Quick Host Selection Pills */}
         {(() => {
-          const availableHosts = Array.from(
-            new Set([
-              'Luana e Thiago',
-              'Thais e Lucas',
-              'Camila e Luciano',
-              'Danielle e Fabiano',
-              'Pâmela e Gláucio',
-              'Patrícia e Mota',
-              'Natália e Júlio',
-              ...membros.map(m => m.casal).filter(Boolean),
-              ...cardapioList.map(c => c.anfitriao).filter(Boolean)
-            ])
-          );
+          const availableHosts = casaisAtivos;
 
           return (
             <div className="space-y-2">
@@ -687,7 +693,7 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
                     <th className="py-3 px-4 border-r border-emerald-600/50 w-[240px]">
                       Item / Prato
                     </th>
-                    {CARDAPIO_HOSTS.map((host) => {
+                    {matrixHosts.map((host) => {
                       const isSelected = selectedHost.toLowerCase().trim() === host.toLowerCase().trim();
                       return (
                         <th
@@ -706,17 +712,17 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-emerald-200/60 dark:divide-slate-700 text-xs bg-emerald-50/30 dark:bg-slate-800">
-                  {CARDAPIO_MATRIX.map((row, idx) => (
+                  {matrixPratos.map((prato, idx) => (
                     <tr
                       key={idx}
                       className={idx % 2 === 0 ? 'bg-white dark:bg-slate-800' : 'bg-emerald-50/40 dark:bg-slate-700/30'}
                     >
                       <td className="py-2.5 px-4 font-bold text-slate-800 dark:text-slate-200 border-r border-emerald-200/60 dark:border-slate-700">
-                        {row.prato}
+                        {prato}
                       </td>
-                      {CARDAPIO_HOSTS.map((host) => {
+                      {matrixHosts.map((host) => {
                         const isSelected = selectedHost.toLowerCase().trim() === host.toLowerCase().trim();
-                        const quemLeva = row.atribuicoes[host] || '---';
+                        const quemLeva = getQuemLeva(prato, host);
                         const isHostSelf = quemLeva.toLowerCase().trim() === host.toLowerCase().trim();
 
                         return (
