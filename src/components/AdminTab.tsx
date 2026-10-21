@@ -1057,16 +1057,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({
         >
           🔐 Acesso ao App
         </button>
-        <button
-          onClick={() => setAdminSubTab('senha')}
-          className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all border shadow-sm ${
-            adminSubTab === 'senha'
-              ? 'bg-[#1C52A4] text-amber-300 border-[#1C52A4] ring-2 ring-amber-400/50 font-extrabold'
-              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
-          }`}
-        >
-          🔑 Senha dos Contatos
-        </button>
       </div>
 
       {/* SUB TAB 0: CASAIS DA EQUIPE */}
@@ -4141,7 +4131,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({
         </div>
       )}
 
-      {/* SUB TAB: MUDAR SENHA DO SISTEMA */}
       {adminSubTab === 'acesso' && (
         <AcessoPanel
           membros={todosMembros.length > 0 ? todosMembros : membros}
@@ -4149,105 +4138,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           onNotify={onNotify}
           refreshData={refreshData}
         />
-      )}
-
-      {adminSubTab === 'senha' && (
-        <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200/80 dark:border-slate-700/80 space-y-6 max-w-xl mx-auto">
-          <div className="border-b border-slate-200 dark:border-slate-700 pb-4">
-            <h2 className="font-serif text-xl font-bold text-[#1C52A4] dark:text-amber-300 flex items-center gap-2">
-              🔑 Mudar Senha do Sistema
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Senha que libera a lista de contatos dos casais na Agenda. O Painel Administrativo agora usa o login com Google.
-            </p>
-          </div>
-
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (currentPassInput.trim() !== storedAdminPass && currentPassInput.trim() !== 'ens13') {
-                onNotify('Senha atual incorreta!', 'e');
-                return;
-              }
-              if (!newPassInput.trim()) {
-                onNotify('A nova senha não pode ser vazia.', 'e');
-                return;
-              }
-              if (newPassInput !== confirmPassInput) {
-                onNotify('A confirmação da nova senha não confere.', 'e');
-                return;
-              }
-
-              setChangingPass(true);
-              try {
-                await saveAdminPassword(newPassInput.trim());
-                setStoredAdminPass(newPassInput.trim());
-                setCurrentPassInput('');
-                setNewPassInput('');
-                setConfirmPassInput('');
-                onNotify('Senha do sistema alterada com sucesso!', 's');
-              } catch (err) {
-                onNotify('Erro ao alterar senha. Tente novamente.', 'e');
-              } finally {
-                setChangingPass(false);
-              }
-            }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
-                Senha Atual *
-              </label>
-              <input
-                type="password"
-                required
-                value={currentPassInput}
-                onChange={e => setCurrentPassInput(e.target.value)}
-                placeholder="Digite a senha atual..."
-                className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#1C52A4]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
-                Nova Senha *
-              </label>
-              <input
-                type="password"
-                required
-                value={newPassInput}
-                onChange={e => setNewPassInput(e.target.value)}
-                placeholder="Digite a nova senha..."
-                className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#1C52A4]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
-                Confirmar Nova Senha *
-              </label>
-              <input
-                type="password"
-                required
-                value={confirmPassInput}
-                onChange={e => setConfirmPassInput(e.target.value)}
-                placeholder="Confirme a nova senha..."
-                className="w-full bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 dark:text-slate-100 outline-none focus:border-[#1C52A4]"
-              />
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={changingPass}
-                className="w-full bg-[#1C52A4] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {changingPass ? 'Salvando...' : 'Salvar Nova Senha'}
-              </button>
-            </div>
-          </form>
-        </div>
       )}
 
       {/* SUB TAB: ROTEIRO DA REUNIÃO FORMAL (GERADOR DE PDF) */}
