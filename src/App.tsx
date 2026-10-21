@@ -5,6 +5,9 @@ import { AgendaTab } from './components/AgendaTab';
 import { EstudoTab } from './components/EstudoTab';
 import { AdminTab } from './components/AdminTab';
 import { ReportModal } from './components/ReportModal';
+import { LoginScreen } from './components/LoginScreen';
+import type { User } from 'firebase/auth';
+import { observarLogin, verificarAcesso, sincronizarAcessos, sair, ehSuperAdmin } from './lib/acesso';
 import {
   Reuniao,
   Evento,
@@ -18,8 +21,6 @@ import {
   TemaAno
 } from './types';
 import {
-  testFirestoreConnection,
-  seedInitialDataIfNeeded,
   fetchReunioes,
   fetchEventos,
   fetchAniversarios,
@@ -110,22 +111,33 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Login com Google e permissão de acesso
+  const [usuario, setUsuario] = useState<User | null>(null);
+  const [authPronto, setAuthPronto] = useState(false);
+  const [acesso, setAcesso] = useState<{ membro: boolean; admin: boolean } | null>(null);
+
+  useEffect(
+    () =>
+      observarLogin(async user => {
+        setUsuario(user);
+        setAcesso(null);
+        if (user) setAcesso(await verificarAcesso(user));
+        setAuthPronto(true);
+      }),
+    []
+  );
+
   // Aviso de limite diário do banco
   const [limiteBanco, setLimiteBanco] = useState(false);
   useEffect(() => onLimiteDoBanco(setLimiteBanco), []);
 
-  const isInitializedRef = useRef(false);
+  const acessoRef = useRef(acesso);
+  acessoRef.current = acesso;
 
   // Load all data
   const loadAllData = async () => {
     setLoading(true);
     try {
-      if (!isInitializedRef.current) {
-        isInitializedRef.current = true;
-        testFirestoreConnection().catch(() => {});
-        seedInitialDataIfNeeded().catch(() => {});
-      }
-
       const [r, e, a, c, cd, rf, em, el, mb, ta] = await Promise.all([
         fetchReunioes(),
         fetchEventos(),
@@ -156,6 +168,11 @@ export default function App() {
       setEmails(em);
       setEmailLogs(el);
       setMembros(mb);
+
+      // Mantém a lista de e-mails liberados igual ao cadastro dos casais.
+      if (acessoRef.current?.admin && mb.length > 0) {
+        sincronizarAcessos(mb).catch(err => console.warn('Erro ao sincronizar acessos:', err));
+      }
       setTemasAnoList(ta);
     } catch (err) {
       console.error('Error loading data:', err);
@@ -175,14 +192,24 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadAllData();
-  }, []);
+    if (acesso?.membro) loadAllData();
+  }, [acesso?.membro]);
 
   const handleOpenReportModal = (tema: string, ano: number) => {
     setReportTema(tema);
     setReportAno(ano);
     setReportModalOpen(true);
   };
+
+  if (!authPronto || (usuario && !acesso)) {
+    return <LoginScreen verificando />;
+  }
+  if (!usuario) {
+    return <LoginScreen />;
+  }
+  if (!acesso?.membro) {
+    return <LoginScreen emailSemAcesso={usuario.email} />;
+  }
 
   return (
     <div className="min-h-screen bg-[#F4F0EA] dark:bg-[#0F1623] text-slate-800 dark:text-slate-100 font-sans transition-colors duration-200">
@@ -236,6 +263,17 @@ export default function App() {
         toggleDarkMode={toggleDarkMode}
       />
 
+      {/* Conta conectada */}
+      <div className="max-w-4xl mx-auto px-4 pt-3 flex items-center justify-end gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+        <span className="truncate">{usuario.email}{acesso.admin ? ' · admin' : ''}</span>
+        <button
+          onClick={() => sair()}
+          className="shrink-0 font-bold text-[#1C52A4] dark:text-amber-300 hover:underline"
+        >
+          Sair
+        </button>
+      </div>
+
       {/* Content Body */}
       <main className="max-w-4xl mx-auto px-4 py-5 md:py-8">
         {activeTab === 'agenda' && (
@@ -250,6 +288,7 @@ export default function App() {
             membros={membrosAtivos}
             loading={loading}
             onNotify={notify}
+            isAdmin={acesso.admin}
           />
         )}
 
@@ -280,6 +319,9 @@ export default function App() {
             onNotify={notify}
             onOpenReportModal={handleOpenReportModal}
             setCurrentMonth={setCurrentMonth}
+            isAdmin={acesso.admin}
+            isSuperAdmin={ehSuperAdmin(usuario.email)}
+            todosMembros={membros}
           />
         )}
       </main>

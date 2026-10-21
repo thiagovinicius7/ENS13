@@ -60,6 +60,7 @@ import {
 import { extractMonthFromDate, isDateTodayOrFuture } from '../lib/utils';
 import { SpreadsheetImporter } from './SpreadsheetImporter';
 import { RoteiroReuniaoTab } from './RoteiroReuniaoTab';
+import { AcessoPanel } from './AcessoPanel';
 import {
   addReuniao,
   addEvento,
@@ -105,6 +106,10 @@ interface AdminTabProps {
   onNotify: (msg: string, type: 's' | 'e' | 'i') => void;
   onOpenReportModal: (tema: string, ano: number) => void;
   setCurrentMonth?: (month: number) => void;
+  isAdmin?: boolean;
+  isSuperAdmin?: boolean;
+  /** Todos os cadastros (ativos e ex-membros), para a lista de acesso. */
+  todosMembros?: MembroEquipe[];
 }
 
 export const AdminTab: React.FC<AdminTabProps> = ({
@@ -122,12 +127,15 @@ export const AdminTab: React.FC<AdminTabProps> = ({
   refreshData,
   onNotify,
   onOpenReportModal,
-  setCurrentMonth
+  setCurrentMonth,
+  isAdmin = false,
+  isSuperAdmin = false,
+  todosMembros = [],
 }) => {
-  const [authenticated, setAuthenticated] = useState(false);
+  const authenticated = isAdmin;
   const [passwordInput, setPasswordInput] = useState('');
   const [adminSubTab, setAdminSubTab] = useState<
-    'casais' | 'cadastros' | 'edicao' | 'exclusao' | 'cardapio' | 'relatorio' | 'emails' | 'dados' | 'planilha' | 'temasAno' | 'senha' | 'roteiro'
+    'casais' | 'cadastros' | 'edicao' | 'exclusao' | 'cardapio' | 'relatorio' | 'emails' | 'dados' | 'planilha' | 'temasAno' | 'senha' | 'roteiro' | 'acesso'
   >('casais');
 
   // Password Management State
@@ -329,7 +337,6 @@ export const AdminTab: React.FC<AdminTabProps> = ({
     e.preventDefault();
     const typed = passwordInput.trim();
     if (typed === storedAdminPass || typed === 'ens13') {
-      setAuthenticated(true);
       onNotify('Bem-vindo ao Painel Administrativo!', 's');
     } else {
       onNotify('Senha incorreta! Tente novamente.', 'e');
@@ -918,21 +925,9 @@ export const AdminTab: React.FC<AdminTabProps> = ({
             </p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-3">
-            <input
-              type="password"
-              placeholder="Digite a senha..."
-              value={passwordInput}
-              onChange={e => setPasswordInput(e.target.value)}
-              className="w-full text-center tracking-widest bg-slate-50 dark:bg-slate-700 border-2 border-slate-200 dark:border-slate-600 rounded-xl p-3 text-sm font-bold text-slate-800 dark:text-slate-100 outline-none focus:border-[#1C52A4] dark:focus:border-amber-400"
-            />
-            <button
-              type="submit"
-              className="w-full bg-[#1C52A4] hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-all shadow-md"
-            >
-              Entrar no Painel
-            </button>
-          </form>
+          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+            Sua conta não é de administrador. Se precisar de acesso, fale com o administrador da equipe.
+          </p>
         </div>
       </div>
     );
@@ -1053,6 +1048,16 @@ export const AdminTab: React.FC<AdminTabProps> = ({
           📑 Gerar Roteiro PDF
         </button>
         <button
+          onClick={() => setAdminSubTab('acesso')}
+          className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all border shadow-sm ${
+            adminSubTab === 'acesso'
+              ? 'bg-[#1C52A4] text-amber-300 border-[#1C52A4] ring-2 ring-amber-400/50 font-extrabold'
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
+          }`}
+        >
+          🔐 Acesso ao App
+        </button>
+        <button
           onClick={() => setAdminSubTab('senha')}
           className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wider whitespace-nowrap transition-all border shadow-sm ${
             adminSubTab === 'senha'
@@ -1060,7 +1065,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
               : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-100'
           }`}
         >
-          🔑 Senha do Sistema
+          🔑 Senha dos Contatos
         </button>
       </div>
 
@@ -4137,6 +4142,15 @@ export const AdminTab: React.FC<AdminTabProps> = ({
       )}
 
       {/* SUB TAB: MUDAR SENHA DO SISTEMA */}
+      {adminSubTab === 'acesso' && (
+        <AcessoPanel
+          membros={todosMembros.length > 0 ? todosMembros : membros}
+          isSuperAdmin={isSuperAdmin}
+          onNotify={onNotify}
+          refreshData={refreshData}
+        />
+      )}
+
       {adminSubTab === 'senha' && (
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200/80 dark:border-slate-700/80 space-y-6 max-w-xl mx-auto">
           <div className="border-b border-slate-200 dark:border-slate-700 pb-4">
@@ -4144,7 +4158,7 @@ export const AdminTab: React.FC<AdminTabProps> = ({
               🔑 Mudar Senha do Sistema
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Altere a senha de acesso ao Painel Administrativo. A nova senha será salva com segurança no banco de dados.
+              Senha que libera a lista de contatos dos casais na Agenda. O Painel Administrativo agora usa o login com Google.
             </p>
           </div>
 

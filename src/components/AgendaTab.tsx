@@ -52,6 +52,7 @@ interface AgendaTabProps {
   membros?: MembroEquipe[];
   loading: boolean;
   onNotify: (msg: string, type: 's' | 'e' | 'i') => void;
+  isAdmin?: boolean;
 }
 
 export const AgendaTab: React.FC<AgendaTabProps> = ({
@@ -64,13 +65,14 @@ export const AgendaTab: React.FC<AgendaTabProps> = ({
   cardapioList,
   membros = [],
   loading,
-  onNotify
+  onNotify,
+  isAdmin = false
 }) => {
   const [selectedHost, setSelectedHost] = useState<string>('');
   const [selectedMenuType, setSelectedMenuType] = useState<string>('Café da Manhã');
   const [showFullMatrixTable, setShowFullMatrixTable] = useState<boolean>(false);
   const [showMembersModal, setShowMembersModal] = useState<boolean>(false);
-  const [membersUnlocked, setMembersUnlocked] = useState<boolean>(false);
+  const [membersUnlocked, setMembersUnlocked] = useState<boolean>(isAdmin);
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [passwordError, setPasswordError] = useState<string>('');
   const [showPasswordText, setShowPasswordText] = useState<boolean>(false);

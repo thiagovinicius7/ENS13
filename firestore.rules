@@ -1,8 +1,54 @@
 rules_version = '2';
+
+// Regras do banco do app da Equipe 13 (ENS).
+// Só entra quem fez login com Google e tem o e-mail liberado na coleção "acesso".
+// Para publicar: Firebase Console › Firestore Database › Regras › colar este texto › Publicar.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if true;
+
+    function logado() {
+      return request.auth != null
+        && request.auth.token.email != null
+        && request.auth.token.email_verified == true;
+    }
+
+    function meuEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    // Administradores fixos (nunca ficam trancados para fora).
+    function superAdmin() {
+      return logado() && meuEmail() in ['thiagovinicius7@gmail.com'];
+    }
+
+    function meuAcesso() {
+      return /databases/$(database)/documents/acesso/$(meuEmail());
+    }
+
+    function membro() {
+      return superAdmin() || (logado() && exists(meuAcesso()));
+    }
+
+    function admin() {
+      return superAdmin() || (logado() && exists(meuAcesso()) && get(meuAcesso()).data.admin == true);
+    }
+
+    // Lista de e-mails liberados: cada pessoa só confere o próprio; o Admin gerencia.
+    match /acesso/{email} {
+      allow get: if logado() && (email == meuEmail() || admin());
+      allow list, create, update, delete: if admin();
+    }
+
+    // Configurações do sistema: casais leem, só o Admin altera.
+    match /systemConfig/{id} {
+      allow read: if membro();
+      allow write: if admin();
+    }
+
+    // Demais dados da equipe: liberados para os casais da equipe.
+    match /{colecao}/{id} {
+      allow read, write: if membro() && colecao != 'acesso' && colecao != 'systemConfig';
     }
   }
 }

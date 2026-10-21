@@ -40,7 +40,7 @@ import {
 } from '../data/initialData';
 import { sameCouple, normalizeName, toDiaMes, A_DEFINIR, aniversarioKey, separarAniversariosDuplicados, tipoAniversarioKey } from './casais';
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // ============================================================
