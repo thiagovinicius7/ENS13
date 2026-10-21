@@ -88,3 +88,52 @@ export function toDiaMes(raw?: string): string {
 }
 
 export const A_DEFINIR = 'A definir';
+
+// ============================================================
+// ANIVERSÁRIOS — identificação de duplicados
+// ============================================================
+
+type AniversarioLike = { id?: string; nome?: string; dia?: string; tipo?: string; mes?: number | string };
+
+/** "Matrimônio", "Casamento", "Bodas" → matrimonio; o resto é natalício. */
+export function tipoAniversarioKey(tipo: string | undefined | null): 'matrimonio' | 'natalicio' {
+  const t = normalizeName(tipo);
+  return /matrim|casament|bodas/.test(t) ? 'matrimonio' : 'natalicio';
+}
+
+/**
+ * Chave que identifica o mesmo aniversário mesmo quando foi gravado com
+ * pequenas diferenças: acentos/maiúsculas no nome, ordem dos nomes do casal,
+ * "8/10" x "08/10" x "08/10/2016" e variações do tipo.
+ */
+export function aniversarioKey(a: AniversarioLike): string {
+  const tipo = tipoAniversarioKey(a.tipo);
+  const nome = tipo === 'matrimonio' ? coupleKey(a.nome) : normalizeName(a.nome);
+  let dia = toDiaMes(a.dia);
+  if (!dia && a.dia && a.mes) {
+    const d = String(a.dia).match(/\d+/)?.[0];
+    if (d) dia = toDiaMes(`${d}/${a.mes}`);
+  }
+  return `${tipo}__${nome}__${dia || normalizeName(a.dia)}`;
+}
+
+/**
+ * Separa os aniversários em "manter" e "duplicados". A escolha de qual manter
+ * é determinística (o de menor id), para que dois aparelhos limpando ao mesmo
+ * tempo apaguem exatamente os mesmos registros.
+ */
+export function separarAniversariosDuplicados<T extends AniversarioLike>(lista: T[]): { manter: T[]; duplicados: T[] } {
+  const ordenada = [...lista].sort((a, b) => String(a.id || '').localeCompare(String(b.id || '')));
+  const vistos = new Set<string>();
+  const manter: T[] = [];
+  const duplicados: T[] = [];
+  for (const a of ordenada) {
+    const key = aniversarioKey(a);
+    if (vistos.has(key)) duplicados.push(a);
+    else {
+      vistos.add(key);
+      manter.push(a);
+    }
+  }
+  return { manter, duplicados };
+}

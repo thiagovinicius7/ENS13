@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, onLog } from 'firebase/app';
 import {
   getFirestore,
   collection,
@@ -38,10 +38,61 @@ import {
   INITIAL_EMAILS_LIST,
   INITIAL_CONSELHEIRO
 } from '../data/initialData';
-import { sameCouple, normalizeName, toDiaMes, A_DEFINIR } from './casais';
+import { sameCouple, normalizeName, toDiaMes, A_DEFINIR, aniversarioKey, separarAniversariosDuplicados, tipoAniversarioKey } from './casais';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// ============================================================
+// AVISO DE LIMITE DO BANCO (cota diária do plano gratuito)
+// ============================================================
+
+let limiteAtingido = false;
+const limiteListeners = new Set<(atingido: boolean) => void>();
+
+function pareceErroDeLimite(info: unknown): boolean {
+  if (!info) return false;
+  const code = (info as any)?.code;
+  if (code === 'resource-exhausted') return true;
+  const msg = info instanceof Error ? info.message : String(info);
+  return /quota|resource[-_ ]?exhausted|limite di[áa]rio/i.test(msg);
+}
+
+/** Avisa a interface se o erro indicar que a cota do banco acabou. */
+export function detectarLimiteDoBanco(err: unknown) {
+  if (limiteAtingido || !pareceErroDeLimite(err)) return;
+  limiteAtingido = true;
+  limiteListeners.forEach(cb => cb(true));
+}
+
+export function isLimiteDoBancoAtingido() {
+  return limiteAtingido;
+}
+
+/** Registra um ouvinte; devolve a função para cancelar. */
+export function onLimiteDoBanco(cb: (atingido: boolean) => void): () => void {
+  limiteListeners.add(cb);
+  if (limiteAtingido) cb(true);
+  return () => limiteListeners.delete(cb);
+}
+
+/** Limpa o aviso (ex.: depois que uma nova tentativa funcionar). */
+export function limparAvisoDeLimite() {
+  if (!limiteAtingido) return;
+  limiteAtingido = false;
+  limiteListeners.forEach(cb => cb(false));
+}
+
+// O SDK também registra no log quando a cota estoura (inclusive em tentativas
+// em segundo plano que não chegam aos nossos try/catch).
+try {
+  onLog(({ message, args }) => {
+    detectarLimiteDoBanco(message);
+    (args || []).forEach(a => detectarLimiteDoBanco(a));
+  }, { level: 'warn' });
+} catch {
+  /* ignore */
+}
 
 export enum OperationType {
   CREATE = 'create',
@@ -73,6 +124,7 @@ export async function testFirestoreConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
+    detectarLimiteDoBanco(error);
     if (error instanceof Error && error.message.includes('offline')) {
       console.warn('Firestore offline connection check:', error.message);
     }
@@ -95,6 +147,7 @@ export async function wipeAllDatabaseData() {
     console.log('All collections wiped successfully!');
     return { success: true, message: 'Todos os dados do banco foram apagados com sucesso!' };
   } catch (err: any) {
+    detectarLimiteDoBanco(err);
     console.error('Error wiping database:', err);
     return { success: false, message: 'Erro ao apagar dados: ' + (err.message || String(err)) };
   }
@@ -139,6 +192,7 @@ export async function forceReseedAllData() {
     console.log('Force re-seed finished successfully!');
     return { success: true, message: 'Dados completos da planilha reimportados com sucesso!' };
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Error during force re-seed:', err);
     return { success: false, message: 'Erro ao reimportar dados da planilha.' };
   }
@@ -233,6 +287,7 @@ export async function seedInitialDataIfNeeded() {
 
     await setDoc(sysRef, { seeded: true, timestamp: new Date().toISOString() });
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.warn('Could not seed initial data:', err);
   }
 }
@@ -243,6 +298,7 @@ export async function fetchReunioes(): Promise<Reuniao[]> {
     const snap = await getDocs(collection(db, 'reunioes'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Reuniao));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'reunioes');
     return [];
   }
@@ -253,6 +309,7 @@ export async function fetchEventos(): Promise<Evento[]> {
     const snap = await getDocs(collection(db, 'eventos'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Evento));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'eventos');
     return [];
   }
@@ -263,6 +320,7 @@ export async function fetchAniversarios(): Promise<Aniversario[]> {
     const snap = await getDocs(collection(db, 'aniversarios'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Aniversario));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'aniversarios');
     return [];
   }
@@ -273,6 +331,7 @@ export async function fetchCasaisMes(): Promise<CasalMes[]> {
     const snap = await getDocs(collection(db, 'casaisMes'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as CasalMes));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'casaisMes');
     return [];
   }
@@ -283,6 +342,7 @@ export async function fetchCardapio(): Promise<CardapioItem[]> {
     const snap = await getDocs(collection(db, 'cardapio'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as CardapioItem));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'cardapio');
     return [];
   }
@@ -304,6 +364,7 @@ export async function fetchReflexoes(): Promise<Reflexao[]> {
       reflexoesMap.set(key, data);
     });
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.warn('Firestore fetchReflexoes notice:', err);
   }
 
@@ -326,6 +387,7 @@ export async function fetchReflexoes(): Promise<Reflexao[]> {
       }
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.warn('Could not fetch reflexoes from server endpoint:', err);
   }
 
@@ -353,6 +415,7 @@ export async function fetchEmails(): Promise<EmailContact[]> {
     const snap = await getDocs(collection(db, 'emails'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as EmailContact));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'emails');
     return [];
   }
@@ -363,6 +426,7 @@ export async function fetchEmailLogs(): Promise<EmailLog[]> {
     const snap = await getDocs(collection(db, 'emailLogs'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as EmailLog));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'emailLogs');
     return [];
   }
@@ -379,6 +443,7 @@ export async function fetchMembros(): Promise<MembroEquipe[]> {
         m.funcao?.toLowerCase().includes('conselheiro')
       ));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.GET, 'membros');
     return [];
   }
@@ -393,6 +458,7 @@ export async function fetchConselheiroEspiritual(): Promise<ConselheiroEspiritua
     }
     return null;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.warn('Erro ao buscar conselheiro espiritual:', err);
     return null;
   }
@@ -408,6 +474,7 @@ export async function saveConselheiroEspiritual(data: ConselheiroEspiritual): Pr
       await addDoc(collection(db, 'conselheiro'), data);
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao salvar conselheiro espiritual:', err);
     throw err;
   }
@@ -422,6 +489,7 @@ export async function fetchAdminPassword(): Promise<string> {
       if (data && data.password) return data.password;
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.warn('Erro ao buscar senha admin:', err);
   }
   return 'ens13'; // default password
@@ -432,6 +500,7 @@ export async function saveAdminPassword(newPassword: string): Promise<void> {
     const docRef = doc(db, 'systemConfig', 'adminPass');
     await setDoc(docRef, { password: newPassword, updatedAt: new Date().toISOString() }, { merge: true });
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao salvar senha admin:', err);
     throw err;
   }
@@ -442,6 +511,7 @@ export async function fetchTemasAnoList(): Promise<TemaAno[]> {
     const snap = await getDocs(collection(db, 'temasAno'));
     return snap.docs.map(doc => ({ ...doc.data(), id: doc.id } as TemaAno));
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.warn('Erro ao buscar temas do ano:', err);
     return [];
   }
@@ -458,6 +528,7 @@ export async function saveTemaAno(year: number, temas: Record<string, string>): 
       await addDoc(collection(db, 'temasAno'), { year, temas, updatedAt: new Date().toISOString() });
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao salvar temas do ano:', err);
     throw err;
   }
@@ -469,6 +540,7 @@ export async function addMembro(data: Omit<MembroEquipe, 'id'>) {
     const docRef = await addDoc(collection(db, 'membros'), data);
     return docRef.id;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'membros');
   }
 }
@@ -477,6 +549,7 @@ export async function addReuniao(data: Omit<Reuniao, 'id'>) {
     const docRef = await addDoc(collection(db, 'reunioes'), data);
     return docRef.id;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'reunioes');
   }
 }
@@ -486,15 +559,22 @@ export async function addEvento(data: Omit<Evento, 'id'>) {
     const docRef = await addDoc(collection(db, 'eventos'), data);
     return docRef.id;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'eventos');
   }
 }
 
 export async function addAniversario(data: Omit<Aniversario, 'id'>) {
   try {
+    // Não grava de novo um aniversário que já existe (mesmo nome, tipo e dia).
+    const snap = await getDocs(collection(db, 'aniversarios'));
+    const key = aniversarioKey(data);
+    const existente = snap.docs.find(d => aniversarioKey(d.data()) === key);
+    if (existente) return existente.id;
     const docRef = await addDoc(collection(db, 'aniversarios'), data);
     return docRef.id;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'aniversarios');
   }
 }
@@ -512,6 +592,7 @@ export async function saveCasaisMes(data: Omit<CasalMes, 'id'>) {
       return docRef.id;
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'casaisMes');
   }
 }
@@ -606,6 +687,7 @@ export async function addEmail(email: string) {
     });
     return { success: true, message: 'E-mail cadastrado com sucesso!' };
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'emails');
     return { success: false, message: 'Erro ao cadastrar e-mail.' };
   }
@@ -615,6 +697,7 @@ export async function addEmailLog(log: Omit<EmailLog, 'id'>) {
   try {
     await addDoc(collection(db, 'emailLogs'), log);
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'emailLogs');
   }
 }
@@ -672,6 +755,7 @@ export async function updateItemById(collectionName: string, id: string, data: a
       await addDoc(colRef, payload);
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.UPDATE, collectionName);
   }
 }
@@ -779,6 +863,7 @@ export async function deleteItemById(collectionName: string, id: string): Promis
 
     return deletedCount;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.DELETE, collectionName);
     return 0;
   }
@@ -793,11 +878,27 @@ export async function bulkImportCollection(collectionName: string, items: any[],
       }
     }
 
+    // Aniversários: não importa de novo os que já estão no banco (nem repetidos na própria planilha).
+    if (collectionName === 'aniversarios') {
+      const snap = await getDocs(collection(db, 'aniversarios'));
+      const keys = new Set(snap.docs.map(d => aniversarioKey(d.data())));
+      let count = 0;
+      for (const item of items) {
+        const key = aniversarioKey(item);
+        if (keys.has(key)) continue;
+        await addDoc(collection(db, collectionName), item);
+        keys.add(key);
+        count++;
+      }
+      return { success: true, count };
+    }
+
     for (const item of items) {
       await addDoc(collection(db, collectionName), item);
     }
     return { success: true, count: items.length };
   } catch (err: any) {
+    detectarLimiteDoBanco(err);
     console.error(`Error bulk importing into ${collectionName}:`, err);
     return { success: false, error: err.message || String(err) };
   }
@@ -840,6 +941,7 @@ export async function saveCardapioItem(item: Partial<CardapioItem> & { anfitriao
       return docRef.id;
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'cardapio');
   }
 }
@@ -861,6 +963,7 @@ export async function saveCardapioMatrixForDish(
       });
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'cardapio');
   }
 }
@@ -888,6 +991,7 @@ export async function deleteCardapioDish(prato: string, tipoMenu: string = 'Caf�
     }
     return deleted;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.DELETE, 'cardapio');
     return 0;
   }
@@ -912,7 +1016,35 @@ export async function updateCardapioDishName(
       }
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.UPDATE, 'cardapio');
+  }
+}
+
+/**
+ * Remove do banco os aniversários repetidos (mesma pessoa/casal, mesmo tipo e
+ * mesmo dia). Recebe a lista já carregada para não gastar leituras à toa.
+ * Retorna quantos registros foram apagados.
+ */
+export async function cleanDuplicateAniversarios(lista?: Aniversario[]): Promise<number> {
+  try {
+    let itens = lista;
+    if (!itens) {
+      const snap = await getDocs(collection(db, 'aniversarios'));
+      itens = snap.docs.map(d => ({ ...d.data(), id: d.id } as Aniversario));
+    }
+    const { duplicados } = separarAniversariosDuplicados(itens);
+    let removed = 0;
+    for (const a of duplicados) {
+      if (!a.id) continue;
+      await deleteDoc(doc(db, 'aniversarios', a.id));
+      removed++;
+    }
+    return removed;
+  } catch (err) {
+    detectarLimiteDoBanco(err);
+    console.error('Erro ao limpar aniversários duplicados:', err);
+    return 0;
   }
 }
 
@@ -939,6 +1071,7 @@ export async function cleanDuplicateCardapio() {
     }
     return removedCount;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao limpar cardápio duplicado:', err);
     return 0;
   }
@@ -1007,7 +1140,7 @@ export async function sincronizarAniversariosDoCasal(membro: Partial<MembroEquip
     const mes = Number(ent.dia.split('/')[1]);
     const existente = snap.docs.find(d => {
       const a = d.data();
-      if (normalizeName(a.tipo) !== normalizeName(ent.tipo)) return false;
+      if (tipoAniversarioKey(a.tipo) !== tipoAniversarioKey(ent.tipo)) return false;
       return ent.tipo === 'Matrimônio'
         ? sameCouple(a.nome, ent.nome)
         : normalizeName(a.nome) === normalizeName(ent.nome);
@@ -1074,6 +1207,7 @@ export async function incluirCasalNaEquipe(data: Omit<MembroEquipe, 'id'>): Prom
       id = ref.id;
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.WRITE, 'membros');
   }
 
@@ -1123,6 +1257,7 @@ export async function removerCasalDaEquipe(
       await addDoc(collection(db, 'membros'), { ...dados, ...saida });
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.UPDATE, 'membros');
   }
 
@@ -1147,6 +1282,7 @@ export async function removerCasalDaEquipe(
       }
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao remover aniversários do casal:', err);
   }
 
@@ -1164,6 +1300,7 @@ export async function removerCasalDaEquipe(
       }
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao atualizar cardápio do casal:', err);
   }
 
@@ -1184,6 +1321,7 @@ export async function removerCasalDaEquipe(
       }
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao remover e-mails do casal:', err);
   }
 
@@ -1208,6 +1346,7 @@ export async function removerCasalDaEquipe(
       }
     }
   } catch (err) {
+    detectarLimiteDoBanco(err);
     console.error('Erro ao atualizar casais do mês:', err);
   }
 
@@ -1222,6 +1361,7 @@ export async function excluirCadastroCasal(membro: MembroEquipe): Promise<boolea
     await deleteDoc(doc(db, 'membros', docId));
     return true;
   } catch (err) {
+    detectarLimiteDoBanco(err);
     handleFirestoreError(err, OperationType.DELETE, 'membros');
     return false;
   }

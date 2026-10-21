@@ -29,9 +29,32 @@ import {
   fetchEmails,
   fetchEmailLogs,
   fetchMembros,
-  fetchTemasAnoList
+  fetchTemasAnoList,
+  cleanDuplicateAniversarios,
+  onLimiteDoBanco,
+  limparAvisoDeLimite
 } from './lib/firebase';
-import { isMembroAtivo, getCasaisAtivos } from './lib/casais';
+import { isMembroAtivo, getCasaisAtivos, separarAniversariosDuplicados } from './lib/casais';
+
+/** Hora local em que a cota gratuita do Firebase renova (meia-noite no horário do Pacífico). */
+function horarioRenovacaoCota(): string {
+  try {
+    const agora = new Date();
+    const partes = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hourCycle: 'h23'
+    }).formatToParts(agora);
+    const get = (t: string) => Number(partes.find(p => p.type === t)?.value || 0);
+    const decorrido = (get('hour') * 3600 + get('minute') * 60 + get('second')) * 1000;
+    const renovacao = new Date(agora.getTime() + (24 * 3600 * 1000 - decorrido));
+    return renovacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'agenda' | 'reflexoes' | 'admin'>('agenda');
@@ -87,6 +110,10 @@ export default function App() {
     }
   }, [darkMode]);
 
+  // Aviso de limite diário do banco
+  const [limiteBanco, setLimiteBanco] = useState(false);
+  useEffect(() => onLimiteDoBanco(setLimiteBanco), []);
+
   const isInitializedRef = useRef(false);
 
   // Load all data
@@ -114,7 +141,15 @@ export default function App() {
 
       setReunioes(r);
       setEventos(e);
-      setAniversarios(a);
+      // Mostra cada aniversário uma vez só e apaga do banco os repetidos.
+      const { manter, duplicados } = separarAniversariosDuplicados(a);
+      setAniversarios(manter);
+      if (duplicados.length > 0) {
+        cleanDuplicateAniversarios(a).then(n => {
+          if (n > 0) console.info(`${n} aniversário(s) duplicado(s) removido(s) do banco.`);
+        });
+      }
+      limparAvisoDeLimite();
       setCasaisMesList(c);
       setCardapioList(cd);
       setReflexoes(rf);
@@ -166,6 +201,28 @@ export default function App() {
             <span>{toast.msg}</span>
             <button onClick={() => setToast(null)} className="text-white/80 hover:text-white font-bold text-sm">
               ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Aviso: limite diário do banco atingido */}
+      {limiteBanco && (
+        <div className="bg-amber-100 dark:bg-amber-900/40 border-b border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100">
+          <div className="max-w-4xl mx-auto px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs">
+            <p className="flex-1 leading-relaxed">
+              <strong>O banco de dados atingiu o limite diário de uso.</strong> Por enquanto o app pode não mostrar
+              dados atualizados e o que for salvo agora pode não ser gravado.
+              {horarioRenovacaoCota() && <> O limite renova por volta das <strong>{horarioRenovacaoCota()}</strong>.</>}
+            </p>
+            <button
+              onClick={() => {
+                limparAvisoDeLimite();
+                loadAllData();
+              }}
+              className="self-start sm:self-auto shrink-0 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold"
+            >
+              Tentar de novo
             </button>
           </div>
         </div>
