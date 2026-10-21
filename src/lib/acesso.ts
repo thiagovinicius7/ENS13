@@ -4,6 +4,9 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
+  sendSignInLinkToEmail,
+  isSignInWithEmailLink,
+  signInWithEmailLink,
   User
 } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
@@ -23,6 +26,7 @@ import { MembroEquipe } from '../types';
 export const SUPER_ADMINS = ['thiagovinicius7@gmail.com'];
 
 export const auth = getAuth(app);
+auth.languageCode = 'pt';
 
 export interface Acesso {
   email: string;
@@ -53,6 +57,52 @@ export async function entrarComGoogle(): Promise<void> {
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   await signInWithPopup(auth, provider);
+}
+
+// ------------------------------------------------------------
+// Login por link no e-mail (para quem não usa conta Google)
+// ------------------------------------------------------------
+
+const CHAVE_EMAIL_LINK = 'ens13_email_login';
+
+/** Endereço do app sem parâmetros (para onde o link do e-mail leva). */
+function enderecoDoApp(): string {
+  return window.location.origin + window.location.pathname;
+}
+
+export async function enviarLinkDeLogin(email: string): Promise<void> {
+  const limpo = normalizarEmail(email);
+  await sendSignInLinkToEmail(auth, limpo, { url: enderecoDoApp(), handleCodeInApp: true });
+  try {
+    localStorage.setItem(CHAVE_EMAIL_LINK, limpo);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** A página foi aberta pelo link de login enviado por e-mail? */
+export function abertoPeloLinkDeLogin(): boolean {
+  return isSignInWithEmailLink(auth, window.location.href);
+}
+
+/** E-mail guardado neste aparelho quando o link foi pedido (se houver). */
+export function emailGuardadoParaLink(): string {
+  try {
+    return localStorage.getItem(CHAVE_EMAIL_LINK) || '';
+  } catch {
+    return '';
+  }
+}
+
+/** Conclui o login com o link do e-mail e limpa o endereço da página. */
+export async function concluirLoginPorLink(email: string): Promise<void> {
+  await signInWithEmailLink(auth, normalizarEmail(email), window.location.href);
+  try {
+    localStorage.removeItem(CHAVE_EMAIL_LINK);
+  } catch {
+    /* ignore */
+  }
+  window.history.replaceState(null, '', enderecoDoApp());
 }
 
 export async function sair(): Promise<void> {

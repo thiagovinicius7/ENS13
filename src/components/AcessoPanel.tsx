@@ -103,8 +103,8 @@ export const AcessoPanel: React.FC<AcessoPanelProps> = ({ membros, isSuperAdmin,
         <div>
           <h3 className="font-serif text-lg font-bold text-[#1C52A4] dark:text-amber-300">Acesso ao app</h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-            Só entra no app quem faz login com Google usando um e-mail desta lista. Os e-mails do cadastro dos casais
-            entram sozinhos; quem sai da equipe perde o acesso. Inclua à mão quem usa outra conta Google.
+            Só entra no app quem faz login (com Google ou com link no e-mail) usando um e-mail desta lista. Os e-mails do cadastro dos casais
+            entram sozinhos; quem sai da equipe perde o acesso. Inclua à mão quem quiser entrar com outro e-mail.
           </p>
         </div>
 
@@ -173,7 +173,7 @@ export const AcessoPanel: React.FC<AcessoPanelProps> = ({ membros, isSuperAdmin,
             type="email"
             value={novoEmail}
             onChange={e => setNovoEmail(e.target.value)}
-            placeholder="e-mail da conta Google"
+            placeholder="e-mail de login"
             className="bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl px-3 py-2 text-xs text-slate-800 dark:text-slate-100"
           />
           <select
