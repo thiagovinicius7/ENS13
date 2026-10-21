@@ -1,4 +1,3 @@
-import { initializeApp, getApps } from 'firebase/app';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -7,16 +6,7 @@ import {
   onAuthStateChanged,
   User
 } from 'firebase/auth';
-import {
-  getFirestore,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  deleteDoc,
-  writeBatch
-} from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, deleteDoc } from 'firebase/firestore';
 import { app, db, detectarLimiteDoBanco } from './firebase';
 import { MembroEquipe } from '../types';
 
@@ -148,64 +138,4 @@ export async function sincronizarAcessos(
     resultado.removidos++;
   }
   return resultado;
-}
-
-// ============================================================
-// MIGRAÇÃO DO BANCO ANTIGO (projeto compartilhado do AI Studio)
-// Usada uma única vez para trazer os dados para o projeto próprio.
-// ============================================================
-
-const BANCO_ANTIGO = {
-  config: {
-    apiKey: 'AIzaSyDEGkvtd1E9iJ04aACDEDEvQIO0e6NECVA',
-    authDomain: 'gen-lang-client-0996248003.firebaseapp.com',
-    projectId: 'gen-lang-client-0996248003',
-    storageBucket: 'gen-lang-client-0996248003.firebasestorage.app',
-    messagingSenderId: '634023244351',
-    appId: '1:634023244351:web:f10ffd622125715385fe8a'
-  },
-  databaseId: 'ai-studio-equipe13ens-634c979d-dbc1-44a7-a7da-1c936869209b'
-};
-
-export const COLECOES_MIGRACAO = [
-  'membros',
-  'reunioes',
-  'eventos',
-  'aniversarios',
-  'casaisMes',
-  'cardapio',
-  'emails',
-  'emailLogs',
-  'reflexoes',
-  'temasAno',
-  'conselheiro',
-  'systemConfig'
-];
-
-export async function migrarDoBancoAntigo(
-  onProgresso?: (colecao: string, quantidade: number) => void
-): Promise<Record<string, number>> {
-  const appAntigo = getApps().find(a => a.name === 'banco-antigo') || initializeApp(BANCO_ANTIGO.config, 'banco-antigo');
-  const dbAntigo = getFirestore(appAntigo, BANCO_ANTIGO.databaseId);
-  const totais: Record<string, number> = {};
-
-  for (const nome of COLECOES_MIGRACAO) {
-    const snap = await getDocs(collection(dbAntigo, nome));
-    let lote = writeBatch(db);
-    let noLote = 0;
-    for (const d of snap.docs) {
-      // Mantém o mesmo id do documento para não quebrar referências.
-      lote.set(doc(db, nome, d.id), d.data());
-      noLote++;
-      if (noLote === 400) {
-        await lote.commit();
-        lote = writeBatch(db);
-        noLote = 0;
-      }
-    }
-    if (noLote > 0) await lote.commit();
-    totais[nome] = snap.size;
-    onProgresso?.(nome, snap.size);
-  }
-  return totais;
 }

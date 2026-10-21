@@ -6,7 +6,6 @@ import {
   salvarAcesso,
   removerAcesso,
   sincronizarAcessos,
-  migrarDoBancoAntigo,
   ehSuperAdmin,
   SUPER_ADMINS
 } from '../lib/acesso';
@@ -24,8 +23,6 @@ export const AcessoPanel: React.FC<AcessoPanelProps> = ({ membros, isSuperAdmin,
   const [novoEmail, setNovoEmail] = useState('');
   const [novoCasal, setNovoCasal] = useState('');
   const [novoAdmin, setNovoAdmin] = useState(false);
-  const [migrando, setMigrando] = useState(false);
-  const [progresso, setProgresso] = useState<string[]>([]);
 
   const carregar = async () => {
     setCarregando(true);
@@ -100,29 +97,6 @@ export const AcessoPanel: React.FC<AcessoPanelProps> = ({ membros, isSuperAdmin,
     }
   };
 
-  const handleMigrar = async () => {
-    const jaTemDados = membros.length > 0;
-    const msg = jaTemDados
-      ? 'O banco novo já tem casais cadastrados. Trazer de novo vai SOBRESCREVER os registros com os do banco antigo (mesmo id). Continuar?'
-      : 'Copiar todos os dados do banco antigo (AI Studio) para o banco novo?';
-    if (!window.confirm(msg)) return;
-    setMigrando(true);
-    setProgresso([]);
-    try {
-      const totais = await migrarDoBancoAntigo((colecao, qtd) =>
-        setProgresso(prev => [...prev, `${colecao}: ${qtd}`])
-      );
-      const total = Object.values(totais).reduce((a, b) => a + b, 0);
-      onNotify(`Migração concluída: ${total} registro(s) copiados.`, 's');
-      refreshData();
-      setTimeout(carregar, 1500);
-    } catch (err: any) {
-      onNotify('Erro na migração: ' + (err?.message || err), 'e');
-    } finally {
-      setMigrando(false);
-    }
-  };
-
   return (
     <div className="space-y-6">
       <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-4">
@@ -188,7 +162,7 @@ export const AcessoPanel: React.FC<AcessoPanelProps> = ({ membros, isSuperAdmin,
               ))}
             {acessos.filter(a => !ehSuperAdmin(a.email)).length === 0 && (
               <p className="p-4 text-xs text-slate-400">
-                Nenhum e-mail liberado ainda. Use “Sincronizar com o cadastro” depois de trazer os dados.
+                Nenhum e-mail liberado ainda. Use “Sincronizar com o cadastro”.
               </p>
             )}
           </div>
@@ -223,30 +197,6 @@ export const AcessoPanel: React.FC<AcessoPanelProps> = ({ membros, isSuperAdmin,
           </button>
         </form>
       </div>
-
-      {isSuperAdmin && (
-        <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 space-y-3">
-          <h3 className="font-serif text-lg font-bold text-[#1C52A4] dark:text-amber-300">Trazer dados do banco antigo</h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-            Copia casais, agenda, aniversários, cardápio, e-mails, reflexões e configurações do banco do AI Studio para o
-            banco próprio da equipe. Use uma vez, logo depois da mudança. Depois de conferir, feche o banco antigo.
-          </p>
-          <button
-            onClick={handleMigrar}
-            disabled={migrando}
-            className="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60"
-          >
-            {migrando ? 'Copiando…' : 'Trazer dados agora'}
-          </button>
-          {progresso.length > 0 && (
-            <ul className="text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5">
-              {progresso.map(p => (
-                <li key={p}>✓ {p}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
     </div>
   );
 };
