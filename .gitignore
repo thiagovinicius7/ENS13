@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Dados locais do servidor de desenvolvimento (contêm dados pessoais)
+/data/
